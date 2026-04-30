@@ -220,7 +220,7 @@ export default function AnalyticsLayout({ children }: { children: React.ReactNod
   return (
     <>
       <DataLoader />
-      <div className="flex h-full">
+      <div className="flex h-full min-w-0 overflow-hidden">
         {/* Sidebar */}
         <aside className="w-56 shrink-0 border-r bg-white flex flex-col">
           <div className="px-4 py-5 border-b">
@@ -286,7 +286,7 @@ export default function AnalyticsLayout({ children }: { children: React.ReactNod
         </aside>
 
         {/* Main — individual pages set their own overflow strategy */}
-        <main className="flex-1 min-h-0 flex flex-col">
+        <main className="flex-1 min-h-0 min-w-0 overflow-hidden flex flex-col">
           {children}
         </main>
       </div>

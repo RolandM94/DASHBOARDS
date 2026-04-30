@@ -70,6 +70,7 @@ Structural rules
 
 Sort (sort)
 • Must be one of: ${SORT_ORDERS.join(", ")}.
+• When the user asks for a chart "by" a category such as ministry, agency, state, sector, status, or year, include ALL categories in that field by default.
 • Use top_5/top_10/top_20 ONLY when the user explicitly asks for "top", "highest", "largest", "bottom", "lowest", or a limited number of categories.
 • If the user asks for "all", "full", "every", or "each" category, do NOT use top_5/top_10/top_20.
 • For high-cardinality categorical fields, prefer bar or table over pie. Pie charts should only be used when the selected dimension has 8 or fewer categories, unless the user explicitly asks for a pie chart.
@@ -81,6 +82,7 @@ Insight
 • Write 2–3 sentences describing what this chart is likely to reveal about the data.
 • Be specific: name potential top/bottom categories, trends, or disparities.
 • Write as if you have already seen the chart — confident and analytical.
+• If the available field metadata shows only a small number of categories for a requested category field, do not imply more categories exist than the selected dataset contains.
 
 ━━━ OUTPUT FORMAT ━━━
 Respond with ONLY a JSON object — no markdown fences, no explanation.

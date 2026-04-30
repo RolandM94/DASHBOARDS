@@ -44,7 +44,7 @@ export async function GET(
   const preview = url.searchParams.get("preview") === "true";
 
   if (preview) {
-    const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "20", 10), 100);
+    const limit = Math.min(parseInt(url.searchParams.get("limit") ?? "20", 10), 1000);
     const { data, error } = await serviceClient
       .from("dataset_rows")
       .select("data")

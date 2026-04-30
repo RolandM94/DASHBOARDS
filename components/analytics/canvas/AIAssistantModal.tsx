@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import type { Dataset, Worksheet, WorksheetConfig, ChartType, WidgetBlockConfig } from "@/types";
 import { useWorksheetStore } from "@/store/worksheetStore";
 import { useCanvasStore } from "@/store/canvasStore";
@@ -220,13 +220,14 @@ export function AIAssistantModal({ canvasId, onClose }: Props) {
   const addWorksheet    = useWorksheetStore((s) => s.addWorksheet);
   const updateWorksheet = useWorksheetStore((s) => s.updateWorksheet);
   const addBlock        = useCanvasStore((s) => s.addBlock);
+  const updateBlock     = useCanvasStore((s) => s.updateBlock);
   const canvas          = useCanvasStore((s) => s.getCanvasById(canvasId));
 
   const widgetBlocks = (canvas?.blocks ?? []).filter((b) => b.type === "widget") as WidgetBlockConfig[];
 
   const [mode, setMode] = useState<"create" | "modify">("create");
   const [targetWidgetId, setTargetWidgetId] = useState(widgetBlocks[0]?.id ?? "");
-  const [selectedDataset, setSelectedDataset] = useState(datasets[0]?.id ?? "");
+  const [selectedDataset, setSelectedDataset] = useState("");
   const [prompt, setPrompt]           = useState("");
   const [state, setState]             = useState<ModalState>({ phase: "input" });
   const [includeInsight, setIncludeInsight] = useState(true);
@@ -240,6 +241,15 @@ export function AIAssistantModal({ canvasId, onClose }: Props) {
 
   const targetWidget    = widgetBlocks.find((b) => b.id === targetWidgetId);
   const targetWorksheet = targetWidget ? worksheets.find((w) => w.id === targetWidget.worksheetId) : undefined;
+  const linkedInsightBlock = targetWorksheet
+    ? canvas?.blocks.find((b) => b.type === "text" && b.worksheetId === targetWorksheet.id)
+    : undefined;
+
+  useEffect(() => {
+    if (mode !== "modify") return;
+    if (targetWidgetId && widgetBlocks.some((b) => b.id === targetWidgetId)) return;
+    setTargetWidgetId(widgetBlocks[0]?.id ?? "");
+  }, [mode, targetWidgetId, widgetBlocks]);
 
   // In modify mode the dataset comes from the target worksheet; in create mode it's user-selected
   const activeDatasetId = mode === "modify"
@@ -256,9 +266,12 @@ export function AIAssistantModal({ canvasId, onClose }: Props) {
     let effectivePriorMessages = priorMessages;
     if (mode === "modify" && targetWorksheet && priorMessages.length === 0) {
       effectivePriorMessages = [
-        { role: "user",      content: "Here is the current chart configuration to modify:" },
+        {
+          role: "user",
+          content: "Here is the current chart configuration to modify. Preserve the current intent unless I explicitly ask to change it.",
+        },
         { role: "assistant", content: JSON.stringify({
-          title:      targetWorksheet.name,
+          title:      targetWidget?.title ?? targetWorksheet.name,
           description: targetWorksheet.description ?? "",
           chartType:  targetWorksheet.config.chartType,
           dimensions: targetWorksheet.config.dimensions,
@@ -366,6 +379,12 @@ export function AIAssistantModal({ canvasId, onClose }: Props) {
         }
         const updated: Worksheet = await patchRes.json();
         updateWorksheet(updated.id, updated);
+        if (targetWidget) {
+          updateBlock(canvasId, targetWidget.id, { title: state.title });
+        }
+        if (linkedInsightBlock && state.insight) {
+          updateBlock(canvasId, linkedInsightBlock.id, { content: state.insight });
+        }
         onClose();
         return;
       }
@@ -444,6 +463,11 @@ export function AIAssistantModal({ canvasId, onClose }: Props) {
     setPrompt("");
   }
 
+  function handleTargetWidgetChange(widgetId: string) {
+    setTargetWidgetId(widgetId);
+    handleReset();
+  }
+
   const isLoading = state.phase === "loading" || state.phase === "adding";
 
   return (
@@ -460,7 +484,7 @@ export function AIAssistantModal({ canvasId, onClose }: Props) {
           </div>
           <div className="flex-1 min-w-0">
             <h2 className="font-semibold text-sm text-gray-900">AI Chart Assistant</h2>
-            <p className="text-xs text-muted-foreground">Describe what you want to visualise</p>
+            <p className="text-xs text-muted-foreground">Choose the data, then describe the chart</p>
           </div>
           <button
             onClick={onClose}
@@ -508,7 +532,7 @@ export function AIAssistantModal({ canvasId, onClose }: Props) {
                 Dataset
               </label>
               <DatasetPicker
-                datasets={datasets}
+                datasets={datasets.filter((d) => !d.accessType || d.accessType === "own" || d.isSeed || d.accessType === "seed")}
                 value={selectedDataset}
                 onChange={setSelectedDataset}
               />
@@ -525,7 +549,7 @@ export function AIAssistantModal({ canvasId, onClose }: Props) {
                     <button
                       key={wb.id}
                       type="button"
-                      onClick={() => setTargetWidgetId(wb.id)}
+                      onClick={() => handleTargetWidgetChange(wb.id)}
                       className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border text-left transition-colors text-sm ${
                         targetWidgetId === wb.id
                           ? "border-brand bg-brand-tint-100/60 text-brand-deep"

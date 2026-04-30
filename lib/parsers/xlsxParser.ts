@@ -12,10 +12,16 @@ export function parseXLSX(file: File): Promise<ParseResult> {
       try {
         const data = new Uint8Array(e.target!.result as ArrayBuffer);
         const workbook = XLSX.read(data, { type: "array" });
-        const sheetName = workbook.SheetNames[0];
-        const sheet = workbook.Sheets[sheetName];
-        const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" }) as Record<string, unknown>[];
-        const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
+        const seenHeaders = new Set<string>();
+        const rows = workbook.SheetNames.flatMap((sheetName) => {
+          const sheet = workbook.Sheets[sheetName];
+          const sheetRows = XLSX.utils.sheet_to_json(sheet, { defval: "" }) as Record<string, unknown>[];
+          for (const row of sheetRows) {
+            for (const header of Object.keys(row)) seenHeaders.add(header);
+          }
+          return sheetRows;
+        });
+        const headers = Array.from(seenHeaders);
         resolve({ rows, headers });
       } catch (err) {
         reject(err);

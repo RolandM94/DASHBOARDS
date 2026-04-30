@@ -112,7 +112,7 @@ export function WorksheetBuilder({ existingWorksheet }: Props) {
   }
 
   return (
-    <div className="h-full relative">
+    <div className="relative h-full min-h-0 min-w-0 overflow-hidden">
       <StepBuild
         dataset={dataset}
         initialWorksheet={existingWorksheet}

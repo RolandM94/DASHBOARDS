@@ -138,7 +138,7 @@ export function StepBuild({ dataset, initialWorksheet, onSave, onBack }: Props) 
   }
 
   return (
-    <div className="flex flex-col h-full relative">
+    <div className="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
       {/* Top bar */}
       <div className="flex items-center justify-between px-4 py-2.5 border-b bg-white shrink-0 gap-4">
         <div className="flex items-center gap-3 min-w-0">
@@ -207,9 +207,9 @@ export function StepBuild({ dataset, initialWorksheet, onSave, onBack }: Props) 
       />
 
       {/* 3-panel layout */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
         {/* Left: field pills */}
-        <div className="w-60 shrink-0 border-r bg-white overflow-hidden flex flex-col">
+        <div className="flex w-60 shrink-0 flex-col overflow-hidden border-r bg-white">
           <FieldPanel
             fields={localFields}
             fileName={dataset.fileName}
@@ -225,7 +225,7 @@ export function StepBuild({ dataset, initialWorksheet, onSave, onBack }: Props) 
 
         {/* Center: live preview */}
         <div
-          className="flex-1 overflow-hidden flex flex-col min-w-0"
+          className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
           style={{
             backgroundColor: "#f8fafc",
             backgroundImage: "radial-gradient(circle, #cbd5e1 1px, transparent 1px)",
@@ -236,7 +236,7 @@ export function StepBuild({ dataset, initialWorksheet, onSave, onBack }: Props) 
         </div>
 
         {/* Right: configure or AI assist */}
-        <div className="w-72 shrink-0 border-l bg-white overflow-hidden flex flex-col">
+        <div className="flex w-72 shrink-0 flex-col overflow-hidden border-l bg-white">
           {rightPanel === "ai" ? (
             <WorksheetAIPanel
               datasetId={dataset.id}

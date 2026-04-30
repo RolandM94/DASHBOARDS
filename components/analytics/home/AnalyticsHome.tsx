@@ -14,6 +14,7 @@ import {
   Globe, Users, Lock, Leaf, Trash2,
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { Dataset, DatasetVisibility } from "@/types";
 
 // ── Skeleton card shown while the store is hydrating ──────────────
@@ -128,10 +129,12 @@ function DatasetCard({
   dataset,
   onShare,
   onDelete,
+  onOpen,
 }: {
   dataset: Dataset;
   onShare: (dataset: Dataset) => void;
   onDelete?: (id: string) => void;
+  onOpen?: (dataset: Dataset) => void;
 }) {
   const [deleting, setDeleting] = useState(false);
   const isOwn  = !dataset.accessType || dataset.accessType === "own";
@@ -151,7 +154,17 @@ function DatasetCard({
 
   return (
     <div
-      className="rounded-xl border bg-white overflow-hidden group"
+      role={onOpen ? "button" : undefined}
+      tabIndex={onOpen ? 0 : undefined}
+      onClick={() => onOpen?.(dataset)}
+      onKeyDown={(e) => {
+        if (!onOpen) return;
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpen(dataset);
+        }
+      }}
+      className="rounded-xl border bg-white overflow-hidden group transition-all hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
       style={{ boxShadow: "0px 0px 1px 0px rgba(0,0,0,.15), 0px 1px 4px 0px rgba(0,0,0,.04)" }}
     >
       {/* Top accent stripe */}
@@ -212,7 +225,11 @@ function DatasetCard({
             variant="ghost"
             size="sm"
             className="h-6 px-2 text-[11px] text-muted-foreground gap-1 -ml-1 opacity-0 group-hover:opacity-100 transition-opacity"
-            onClick={() => onShare(dataset)}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onShare(dataset);
+            }}
           >
             <Share2 className="h-3 w-3" />
             Share
@@ -251,6 +268,7 @@ function ShowMore({
 
 // ── Main ──────────────────────────────────────────────────────────
 export function AnalyticsHome() {
+  const router         = useRouter();
   const worksheets     = useWorksheetStore((s) => s.worksheets);
   const wsHydrated     = useWorksheetStore((s) => s.hydrated);
   const canvases       = useCanvasStore((s) => s.canvases);
@@ -377,7 +395,7 @@ export function AnalyticsHome() {
         </section>
 
         {/* My Datasets */}
-        {wsHydrated && ownDatasets.length > 0 && (
+        {wsHydrated && (
           <section>
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
@@ -387,13 +405,36 @@ export function AnalyticsHome() {
                   {ownDatasets.length}
                 </span>
               </div>
+              <Link href="/analytics/worksheet/new">
+                <Button size="sm" variant="ghost" className="gap-1.5 text-xs text-muted-foreground h-7">
+                  <Plus className="h-3.5 w-3.5" />
+                  Add Dataset
+                </Button>
+              </Link>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-              {(dsExpanded ? ownDatasets : ownDatasets.slice(0, PREVIEW)).map((d) => (
-                <DatasetCard key={d.id} dataset={d} onShare={openShare} onDelete={removeDataset} />
-              ))}
-            </div>
-            <ShowMore total={ownDatasets.length} expanded={dsExpanded} onToggle={() => setDsExpanded((v) => !v)} />
+            {ownDatasets.length === 0 ? (
+              <EmptyState
+                icon={Database}
+                message="No datasets yet — upload a file to start building worksheets."
+                href="/analytics/worksheet/new"
+                label="Upload dataset"
+              />
+            ) : (
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {(dsExpanded ? ownDatasets : ownDatasets.slice(0, PREVIEW)).map((d) => (
+                    <DatasetCard
+                      key={d.id}
+                      dataset={d}
+                      onShare={openShare}
+                      onDelete={removeDataset}
+                      onOpen={(dataset) => router.push(`/analytics/datasets/${dataset.id}`)}
+                    />
+                  ))}
+                </div>
+                <ShowMore total={ownDatasets.length} expanded={dsExpanded} onToggle={() => setDsExpanded((v) => !v)} />
+              </>
+            )}
           </section>
         )}
 

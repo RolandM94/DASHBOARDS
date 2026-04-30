@@ -154,7 +154,7 @@ export function PreviewPanel({ datasetId, rowCount, config, title }: Props) {
       )}
 
       {/* Chart area */}
-      <div className="flex-1 min-w-0 overflow-hidden p-5 flex flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-5">
         {!hasData ? (
           <div className="flex-1 flex items-center justify-center flex-col gap-3 text-muted-foreground">
             <div className="h-16 w-16 rounded-2xl bg-muted/60 flex items-center justify-center">
@@ -178,7 +178,7 @@ export function PreviewPanel({ datasetId, rowCount, config, title }: Props) {
         ) : (
           <div
             ref={chartAreaRef}
-            className="flex-1 min-w-0 flex flex-col bg-white rounded-xl border border-gray-100 overflow-hidden"
+            className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-gray-100 bg-white"
             style={{ boxShadow: "0px 0px 5px 0px rgba(0,0,0,.02), 0px 2px 10px 0px rgba(0,0,0,.06), 0px 0px 1px 0px rgba(0,0,0,.3)" }}
           >
             {showTitle && (
@@ -189,7 +189,7 @@ export function PreviewPanel({ datasetId, rowCount, config, title }: Props) {
                 </p>
               </div>
             )}
-            <div className="flex-1 min-w-0 px-2 pt-2 pb-3 min-h-0 overflow-hidden">
+            <div className="min-h-0 min-w-0 flex-1 overflow-hidden px-2 pt-2 pb-3">
               <ChartRenderer
                 chartData={chartData}
                 chartType={config.chartType}

@@ -6,7 +6,7 @@ import type { Layout as RGLLayout } from "react-grid-layout/legacy";
 import {
   Canvas, WidgetBlockConfig, TextBlockConfig,
   FilterBlockConfig, DatasetPreviewBlockConfig, ActiveGlobalFilters, GlobalFilterValue,
-  GridLayoutItem, BlockType, ResolvedChartData,
+  GridLayoutItem, BlockType, ResolvedChartData, SortOrder, ChartType, Worksheet,
 } from "@/types";
 import { useCanvasStore } from "@/store/canvasStore";
 import { useWorksheetStore } from "@/store/worksheetStore";
@@ -17,10 +17,11 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { generateId } from "@/lib/utils/ids";
-import { Plus, CheckCircle2, ArrowLeft, BarChart2, Type, Trash2, Globe, Filter, GripVertical, Loader2, Info, RefreshCw, Pencil, X, Sparkles, Table2 } from "lucide-react";
+import { Plus, CheckCircle2, ArrowLeft, BarChart2, Type, Trash2, Globe, Filter, GripVertical, Loader2, Info, RefreshCw, Pencil, X, Sparkles, Table2, ArrowUpDown, TrendingUp } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChartRenderer } from "@/components/shared/charts/ChartRenderer";
+import { cn } from "@/lib/utils";
 import { getCanvasFields, getFieldWidgetCounts, splitFiltersForApi, encodeFiltersParam, decodeFiltersParam } from "@/lib/data/filters";
 import { FilterBlockView } from "./FilterBlockView";
 import { CanvasFilterBar } from "./CanvasFilterBar";
@@ -28,6 +29,19 @@ import { PublishModal } from "./PublishModal";
 import { AIAssistantModal } from "./AIAssistantModal";
 
 const GridLayout = WidthProvider(ReactGridLayout);
+
+const LOG_SCALE_CHART_TYPES: ChartType[] = ["bar", "grouped_bar", "line", "area"];
+
+const SORT_OPTIONS: { value: SortOrder; label: string }[] = [
+  { value: "natural",    label: "Default order" },
+  { value: "value_desc", label: "Value desc" },
+  { value: "value_asc",  label: "Value asc" },
+  { value: "top_5",      label: "Top 5" },
+  { value: "top_10",     label: "Top 10" },
+  { value: "top_20",     label: "Top 20" },
+  { value: "alpha_asc",  label: "A-Z" },
+  { value: "alpha_desc", label: "Z-A" },
+];
 
 function formatTime(date: Date): string {
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -330,9 +344,30 @@ function WidgetCard({
   const removeBlock = useCanvasStore((s) => s.removeBlock);
   const addBlock    = useCanvasStore((s) => s.addBlock);
   const ws = useWorksheetStore((s) => s.getWorksheetById(block.worksheetId));
+  const updateWorksheet = useWorksheetStore((s) => s.updateWorksheet);
   const [dataCount,  setDataCount]  = useState<number | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [explaining, setExplaining] = useState(false);
+  const [updatingConfig, setUpdatingConfig] = useState(false);
+
+  const supportsLogScale = ws ? LOG_SCALE_CHART_TYPES.includes(ws.config.chartType) : false;
+
+  async function patchWorksheetConfig(patch: Partial<Worksheet["config"]>) {
+    if (!ws) return;
+    const nextConfig = { ...ws.config, ...patch };
+    updateWorksheet(ws.id, { config: nextConfig });
+    setRefreshKey((k) => k + 1);
+    setUpdatingConfig(true);
+    try {
+      await fetch(`/api/worksheets/${ws.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ config: nextConfig }),
+      });
+    } finally {
+      setUpdatingConfig(false);
+    }
+  }
 
   async function handleExplain() {
     setExplaining(true);
@@ -383,6 +418,60 @@ function WidgetCard({
             className="flex items-center gap-0.5 shrink-0 -mt-0.5"
             onPointerDown={(e) => e.stopPropagation()}
           >
+            {ws && ws.config.chartType !== "kpi" && (
+              <>
+                <div className="flex h-6 items-center gap-1 rounded-md border border-gray-100 bg-gray-50 px-1.5">
+                  <ArrowUpDown className="h-3 w-3 text-gray-400" />
+                  <Select
+                    value={ws.config.sort ?? "natural"}
+                    disabled={updatingConfig}
+                    onValueChange={(v) => v && patchWorksheetConfig({ sort: v as SortOrder })}
+                  >
+                    <SelectTrigger className="h-5 w-[92px] border-0 bg-transparent p-0 text-[10px] text-gray-500 shadow-none">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SORT_OPTIONS.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {supportsLogScale && (
+                  <button
+                    type="button"
+                    disabled={updatingConfig}
+                    onClick={() => patchWorksheetConfig({ logScale: !ws.config.logScale })}
+                    className={cn(
+                      "inline-flex h-6 items-center gap-1 rounded-md border px-1.5 text-[10px] font-medium transition-colors disabled:opacity-50",
+                      ws.config.logScale
+                        ? "border-brand/30 bg-brand-tint-100 text-brand-deep"
+                        : "border-gray-100 bg-gray-50 text-gray-500 hover:text-gray-700"
+                    )}
+                    role="switch"
+                    aria-checked={Boolean(ws.config.logScale)}
+                    title="Toggle logarithmic scale"
+                  >
+                    <TrendingUp className="h-3 w-3" />
+                    <span
+                      className={cn(
+                        "relative inline-flex h-3.5 w-6 shrink-0 items-center rounded-full transition-colors",
+                        ws.config.logScale ? "bg-brand" : "bg-gray-200"
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "h-2.5 w-2.5 rounded-full bg-white shadow-sm transition-transform",
+                          ws.config.logScale ? "translate-x-3" : "translate-x-0.5"
+                        )}
+                      />
+                    </span>
+                  </button>
+                )}
+              </>
+            )}
             <button
               className="h-6 w-6 flex items-center justify-center rounded-md text-gray-300 hover:text-gray-500 hover:bg-gray-100 transition-all"
               title="Info"
@@ -756,7 +845,7 @@ export function CanvasBuilder({ existingCanvas }: Props) {
   // ── Render ───────────────────────────────────────────────────────
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
       {/* Top bar */}
       <div className="flex items-center justify-between px-4 py-3 border-b bg-white shrink-0">
         <div className="flex items-center gap-3">
@@ -823,7 +912,7 @@ export function CanvasBuilder({ existingCanvas }: Props) {
       )}
 
       {/* Canvas area */}
-      <div className="flex-1 overflow-y-auto p-6 bg-muted/20">
+      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-6 bg-muted/20">
         {!canvas ? (
           <div className="text-center text-muted-foreground text-sm">Initializing…</div>
         ) : canvas.blocks.length === 0 ? (
