@@ -1,120 +1,232 @@
+@import "react-grid-layout/css/styles.css";
+@import "react-resizable/css/styles.css";
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
 @custom-variant dark (&:is(.dark *));
 
+/* ─────────────────────────────────────────────────────────────────────────
+   Filson Pro — commercial font, woff2 files go in /public/fonts/
+   See public/fonts/README.md for required filenames.
+   Falls back to the system UI stack if files are unavailable.
+───────────────────────────────────────────────────────────────────────── */
+@font-face {
+  font-family: 'Filson Pro';
+  font-style: normal;
+  font-weight: 350;
+  font-display: swap;
+  src: url('/fonts/FilsonPro-Book.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Filson Pro';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/FilsonPro-Regular.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Filson Pro';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/FilsonPro-Medium.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Filson Pro';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/FilsonPro-Bold.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Filson Pro';
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url('/fonts/FilsonPro-Heavy.woff2') format('woff2');
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Tailwind v4 theme — maps CSS variables to utility classes
+───────────────────────────────────────────────────────────────────────── */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
-  --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
-  --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
+  /* Shadcn semantic tokens */
+  --color-background:           var(--background);
+  --color-foreground:           var(--foreground);
+  --color-card:                 var(--card);
+  --color-card-foreground:      var(--card-foreground);
+  --color-popover:              var(--popover);
+  --color-popover-foreground:   var(--popover-foreground);
+  --color-primary:              var(--primary);
+  --color-primary-foreground:   var(--primary-foreground);
+  --color-secondary:            var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
-  --color-card: var(--card);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+  --color-muted:                var(--muted);
+  --color-muted-foreground:     var(--muted-foreground);
+  --color-accent:               var(--accent);
+  --color-accent-foreground:    var(--accent-foreground);
+  --color-destructive:          var(--destructive);
+  --color-border:               var(--border);
+  --color-input:                var(--input);
+  --color-ring:                 var(--ring);
+  --color-chart-1:              var(--chart-1);
+  --color-chart-2:              var(--chart-2);
+  --color-chart-3:              var(--chart-3);
+  --color-chart-4:              var(--chart-4);
+  --color-chart-5:              var(--chart-5);
+  --color-sidebar:              var(--sidebar);
+  --color-sidebar-foreground:   var(--sidebar-foreground);
+  --color-sidebar-primary:              var(--sidebar-primary);
+  --color-sidebar-primary-foreground:   var(--sidebar-primary-foreground);
+  --color-sidebar-accent:               var(--sidebar-accent);
+  --color-sidebar-accent-foreground:    var(--sidebar-accent-foreground);
+  --color-sidebar-border:       var(--sidebar-border);
+  --color-sidebar-ring:         var(--sidebar-ring);
+
+  /* BudgetIQ brand utilities — use as bg-brand, text-brand-deep, etc. */
+  --color-brand:            var(--green-core);
+  --color-brand-light:      var(--green-light);
+  --color-brand-muted:      var(--green-muted);
+  --color-brand-dark:       var(--green-mid-dark);
+  --color-brand-deep:       var(--green-deep);
+  --color-brand-darkest:    var(--green-darkest);
+  --color-brand-tint-100:   var(--green-tint-100);
+  --color-brand-tint-200:   var(--green-tint-200);
+  --color-brand-tint-300:   var(--green-tint-300);
+  --color-brand-tint-400:   var(--green-tint-400);
+  --color-brand-tint-500:   var(--green-tint-500);
+  --color-gold:             var(--gold-primary);
+  --color-gold-amber:       var(--gold-amber);
+  --color-gold-orange:      var(--gold-orange);
+  --color-gold-dark:        var(--gold-dark);
+  --color-gold-light:       var(--gold-light);
+  --color-gold-warm-bg:     var(--gold-warm-bg);
+  --color-text-primary:     var(--text-primary);
+  --color-text-navy:        var(--text-navy);
+  --color-grey-body:        var(--grey-body);
+  --color-grey-muted:       var(--grey-muted);
+  --color-grey-disabled:    var(--grey-disabled);
+  --color-bg-offwhite:      var(--bg-offwhite);
+  --color-bg-card:          var(--bg-card);
+  --color-status-error:     var(--status-error);
+  --color-status-info:      var(--status-info);
+  --color-status-success:   var(--status-success);
+  --color-status-warning:   var(--status-warning);
+
+  /* Typography */
+  --font-sans:    var(--font-sans);
+  --font-mono:    var(--font-geist-mono);
+  --font-heading: var(--font-sans);
+
+  /* Border radius */
+  --radius-sm:  calc(var(--radius) * 0.5);   /* 4px  — micro badges          */
+  --radius-md:  calc(var(--radius) * 0.75);  /* 6px  — mini buttons, tags    */
+  --radius-lg:  var(--radius);               /* 8px  — default cards, inputs */
+  --radius-xl:  calc(var(--radius) * 1.25);  /* 10px — chart cards, stat tiles */
+  --radius-2xl: calc(var(--radius) * 1.5);   /* 12px — MDA header card       */
+  --radius-3xl: calc(var(--radius) * 1.75);  /* 14px — fiscal pulse, scorecard */
+  --radius-4xl: calc(var(--radius) * 2);     /* 16px — large modals          */
 }
 
+/* ─────────────────────────────────────────────────────────────────────────
+   Design tokens — light (only) mode
+   All values are the BudgetIQ palette from DESIGN_SYSTEM.md
+───────────────────────────────────────────────────────────────────────── */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
-}
+  /* ── Typography ───────────────────────────────────────── */
+  --font-sans: 'Filson Pro', ui-sans-serif, system-ui, sans-serif;
 
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  /* ── Shadcn semantic tokens → BudgetIQ values ─────────── */
+  --background:           #FFFFFF;
+  --foreground:           #252117;
+  --card:                 #FFFFFF;
+  --card-foreground:      #252117;
+  --popover:              #FFFFFF;
+  --popover-foreground:   #252117;
+  --primary:              #4BAA73;   /* green-core  */
+  --primary-foreground:   #FFFFFF;
+  --secondary:            #F4F4F4;   /* bg-light    */
+  --secondary-foreground: #252117;
+  --muted:                #F4F4F4;   /* bg-light    */
+  --muted-foreground:     #9CA3AF;   /* grey-muted  */
+  --accent:               #F0F9F4;   /* green-tint-100 */
+  --accent-foreground:    #357951;   /* green-deep  */
+  --destructive:          #E22034;   /* status-error */
+  --border:               #F4F4F4;   /* border-standard */
+  --input:                #EDEEEF;   /* border-light */
+  --ring:                 #4BAA73;   /* green-core  */
+  --radius:               0.5rem;    /* 8px default */
+
+  /* Chart palette — greens primary, golds secondary */
+  --chart-1: #4BAA73;   /* green-core   */
+  --chart-2: #6EBB8E;   /* green-light  */
+  --chart-3: #FFCC00;   /* gold-primary */
+  --chart-4: #FFB300;   /* gold-amber   */
+  --chart-5: #FF9500;   /* gold-orange  */
+
+  /* Sidebar */
+  --sidebar:                    #F9F9F9;   /* bg-offwhite */
+  --sidebar-foreground:         #252117;
+  --sidebar-primary:            #4BAA73;   /* green-core  */
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent:             #F0F9F4;   /* green-tint-100 */
+  --sidebar-accent-foreground:  #357951;   /* green-deep  */
+  --sidebar-border:             #F4F4F4;   /* border-standard */
+  --sidebar-ring:               #4BAA73;
+
+  /* ── Raw BudgetIQ palette (use these for custom components) ── */
+
+  /* Primary greens */
+  --green-core:      #4BAA73;
+  --green-light:     #6EBB8E;
+  --green-muted:     #86C6A1;
+  --green-mid-dark:  #3D9A63;
+  --green-deep:      #357951;
+  --green-darkest:   #217042;
+
+  /* Green tints */
+  --green-tint-100:  #F0F9F4;
+  --green-tint-200:  #EAF5EE;
+  --green-tint-300:  #D7F4E3;
+  --green-tint-400:  #C7E5D3;
+  --green-tint-500:  #ACD8BE;
+
+  /* Gold / amber */
+  --gold-primary:   #FFCC00;
+  --gold-amber:     #FFB300;
+  --gold-orange:    #FF9500;
+  --gold-dark:      #F57F17;
+  --gold-light:     #F9C466;
+  --gold-warm-bg:   #FCFAF7;
+
+  /* Text */
+  --text-primary:   #252117;
+  --text-navy:      #19486A;
+  --text-dark:      #1A1A1A;
+  --text-charcoal:  #212B36;
+
+  /* Neutrals */
+  --grey-body:       #5E5E5E;
+  --grey-muted:      #9CA3AF;
+  --grey-disabled:   #C8C8C8;
+  --border-standard: #F4F4F4;
+  --border-light:    #EDEEEF;
+  --bg-white:        #FFFFFF;
+  --bg-offwhite:     #F9F9F9;
+  --bg-light:        #F4F4F4;
+  --bg-card:         #F6F7F7;
+
+  /* Status */
+  --status-error:   #E22034;
+  --status-info:    #226AF5;
+  --status-warning: #F1C40F;
+  --status-success: #07BC0C;
+
+  /* Card shadows (two levels only — see DESIGN_SYSTEM.md §1.5) */
+  --shadow-card:    0 1px 3px rgba(0, 0, 0, 0.06);
+  --shadow-hover:   0 8px 25px rgba(0, 0, 0, 0.08);
+  --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.1);
 }
 
 @layer base {
@@ -123,8 +235,56 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-size: 14px;
+    line-height: 1.5;
   }
   html {
     @apply font-sans;
+  }
+}
+
+/* ── Print styles (dashboard PDF export) ────────────────────────────── */
+@media print {
+  /* Remove browser chrome, page margins tight */
+  @page {
+    margin: 12mm 10mm;
+  }
+
+  /* Whole page background must be white */
+  html, body {
+    background: white !important;
+    color: black !important;
+  }
+
+  /* Grid layout: allow blocks to break across pages */
+  .react-grid-layout {
+    position: relative !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  .react-grid-item {
+    position: relative !important;
+    transform: none !important;
+    left: auto !important;
+    top: auto !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 280px;
+    display: block;
+    margin-bottom: 12mm;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Cards: remove box-shadows for cleaner PDF */
+  [style*="box-shadow"] {
+    box-shadow: none !important;
+    border: 1px solid #e5e7eb !important;
+  }
+
+  /* Charts: let SVGs fill available width */
+  svg.recharts-surface {
+    width: 100% !important;
   }
 }
