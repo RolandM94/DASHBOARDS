@@ -10,6 +10,14 @@ import Link from "next/link";
 
 type Phase = "request" | "update" | "done";
 
+function formatRateLimitError(message: string): string {
+  const lower = message.toLowerCase();
+  if (lower.includes("rate limit") || lower.includes("too many") || lower.includes("429")) {
+    return "Too many attempts. Please wait a few minutes and try again.";
+  }
+  return message;
+}
+
 export default function ResetPasswordPage() {
   const [phase, setPhase] = useState<Phase>("request");
   const [email, setEmail]         = useState("");
@@ -17,6 +25,7 @@ export default function ResetPasswordPage() {
   const [confirm, setConfirm]     = useState("");
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState<string | null>(null);
+  const [cooldown, setCooldown]   = useState(0);
 
   // Supabase sends users back here after they click the email link.
   // The client picks up the session automatically via onAuthStateChange.
@@ -30,6 +39,11 @@ export default function ResetPasswordPage() {
 
   async function handleRequest(e: React.FormEvent) {
     e.preventDefault();
+    if (cooldown > Date.now()) {
+      const secs = Math.ceil((cooldown - Date.now()) / 1000);
+      setError(`Please wait ${secs}s before trying again.`);
+      return;
+    }
     setError(null);
     setLoading(true);
     try {
@@ -40,7 +54,11 @@ export default function ResetPasswordPage() {
       if (error) throw error;
       setPhase("done");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
+      const message = err instanceof Error ? err.message : "Something went wrong";
+      setError(formatRateLimitError(message));
+      if (message.toLowerCase().includes("rate limit")) {
+        setCooldown(Date.now() + 120_000);
+      }
     } finally {
       setLoading(false);
     }

@@ -5,8 +5,16 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { BarChart2, AlertCircle, Loader2, CheckCircle2 } from "lucide-react";
+import { BarChart2, AlertCircle, Loader2 } from "lucide-react";
 import Link from "next/link";
+
+function formatRateLimitError(message: string): string {
+  const lower = message.toLowerCase();
+  if (lower.includes("rate limit") || lower.includes("too many") || lower.includes("429")) {
+    return "Too many attempts. Please wait a few minutes and try again.";
+  }
+  return message;
+}
 
 export default function SignupPage() {
   const [displayName, setDisplayName] = useState("");
@@ -14,10 +22,15 @@ export default function SignupPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
 
   async function handleSubmit(e: { preventDefault(): void }) {
     e.preventDefault();
+    if (cooldown > Date.now()) {
+      const secs = Math.ceil((cooldown - Date.now()) / 1000);
+      setError(`Please wait ${secs}s before trying again.`);
+      return;
+    }
     setError(null);
     setLoading(true);
 
@@ -28,62 +41,35 @@ export default function SignupPage() {
     }
 
     try {
-      const supabase = createClient();
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: { full_name: displayName.trim() },
-          // Use the current window origin so confirmation links work on any
-          // host — localhost, LAN IP, ngrok, or production domain.
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
-        },
+      const res = await fetch("/api/auth/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password, displayName: displayName.trim() }),
       });
+      const body = await res.json().catch(() => ({})) as { error?: string };
 
-      if (error) {
-        setError(error.message);
+      if (!res.ok) {
+        setError(formatRateLimitError(body.error ?? "Something went wrong"));
+        if ((body.error ?? "").toLowerCase().includes("rate limit")) {
+          setCooldown(Date.now() + 120_000);
+        }
         setLoading(false);
         return;
       }
 
-      // If email confirmation is disabled, a session is returned immediately.
-      if (data.session) {
-        window.location.assign("/analytics");
+      // Auto-confirmed — sign in immediately
+      const supabase = createClient();
+      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+      if (signInError) {
+        // Session didn't start — redirect to login so they can try
+        window.location.assign("/login");
         return;
       }
-
-      // Otherwise, email confirmation is required — show the "check email" screen.
-      setDone(true);
-      setLoading(false);
+      window.location.assign("/analytics");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
       setLoading(false);
     }
-  }
-
-  if (done) {
-    return (
-      <div className="min-h-full bg-gray-50 flex items-center justify-center p-4">
-        <div className="w-full max-w-sm text-center">
-          <div className="flex items-center justify-center gap-2.5 mb-8">
-            <div className="h-9 w-9 bg-brand rounded-xl flex items-center justify-center">
-              <BarChart2 className="h-5 w-5 text-white" />
-            </div>
-            <span className="font-bold text-lg">Eyemark</span>
-          </div>
-          <div className="bg-white rounded-2xl border border-gray-100 p-8"
-            style={{ boxShadow: "0px 0px 5px 0px rgba(0,0,0,.02), 0px 2px 10px 0px rgba(0,0,0,.06), 0px 0px 1px 0px rgba(0,0,0,.3)" }}>
-            <CheckCircle2 className="h-10 w-10 text-green-500 mx-auto mb-3" />
-            <h2 className="text-lg font-bold mb-2">Check your email</h2>
-            <p className="text-sm text-muted-foreground">
-              We sent a confirmation link to <strong>{email}</strong>.
-              Click it to activate your account, then{" "}
-              <Link href="/login" className="text-brand hover:underline">sign in</Link>.
-            </p>
-          </div>
-        </div>
-      </div>
-    );
   }
 
   return (
