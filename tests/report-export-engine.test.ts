@@ -143,7 +143,7 @@ test("renderReportHtmlArtifact encodes HTML bytes", () => {
 test("renderPreviewHtml renders figures as SVG markup instead of escaped text", () => {
   const html = renderPreviewHtml(payload);
 
-  assert.match(html, /<figure class="report-fig">/);
+  assert.match(html, /<figure class="report-fig" contenteditable="false" data-figure-number="\d+">/);
   assert.match(html, /<svg viewBox=/);
   assert.doesNotMatch(html, /&lt;rect/);
   assert.equal((html.match(/Table of Contents/g) ?? []).length, 1);
@@ -180,6 +180,20 @@ test("rendered report markdown does not leak literal asterisks", () => {
   assert.match(preview, /<em>materially<\/em>/);
   assert.doesNotMatch(preview, /\*\*/);
   assert.doesNotMatch(html, /\*\*/);
+});
+
+test("rendered reports preserve safe rich text edits", () => {
+  const richPayload = structuredClone(payload);
+  richPayload.sections[0].content_markdown = '<p><strong>Edited finding</strong></p><ul><li><span style="font-size:12pt" onclick="bad()">Important item</span></li></ul>';
+
+  const preview = renderPreviewHtml(richPayload);
+  const html = renderReportHtml(richPayload);
+
+  assert.match(preview, /<strong>Edited finding<\/strong>/);
+  assert.match(preview, /<ul><li><span style="font-size:12pt">Important item<\/span><\/li><\/ul>/);
+  assert.doesNotMatch(preview, /onclick/);
+  assert.match(html, /<strong>Edited finding<\/strong>/);
+  assert.match(html, /font-size:12pt/);
 });
 
 test("chart legends reserve space and avoid overlapping chart labels", () => {

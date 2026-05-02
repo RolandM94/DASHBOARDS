@@ -195,7 +195,44 @@ function figureHtml(figure: R): string {
     const hdrs = columns.slice(0, 8);
     chart = `<table class="fig-tbl"><thead><tr>${hdrs.map((h) => `<th>${esc(h)}</th>`).join("")}</tr></thead><tbody>${rows.slice(0, 50).map((row) => `<tr>${hdrs.map((h) => `<td>${esc(String((row as unknown as R)[h] ?? ""))}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
   }
-  return `<figure class="report-fig">${chart}<figcaption>Figure ${figure.figure_number}: ${esc(figure.title)}</figcaption></figure>`;
+  return `<figure class="report-fig" contenteditable="false" data-figure-number="${esc(figure.figure_number)}">${chart}<figcaption>Figure ${figure.figure_number}: ${esc(figure.title)}</figcaption></figure>`;
+}
+
+function looksLikeHtml(value: unknown): boolean {
+  return /<\/?(p|h[1-6]|ul|ol|li|strong|b|em|i|u|span|font|br)\b/i.test(String(value ?? ""));
+}
+
+function sanitizeRichHtml(html: unknown): string {
+  let value = String(html ?? "")
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/\son\w+="[^"]*"/gi, "")
+    .replace(/\son\w+='[^']*'/gi, "")
+    .replace(/\son\w+=\S+/gi, "")
+    .replace(/\s(href|src)="[^"]*"/gi, "")
+    .replace(/\s(href|src)='[^']*'/gi, "");
+
+  value = value.replace(/<\/?([a-z][a-z0-9]*)\b([^>]*)>/gi, (match, tag, attrs) => {
+    const name = String(tag).toLowerCase();
+    if (!["p", "h1", "h2", "h3", "ul", "ol", "li", "strong", "b", "em", "i", "u", "span", "font", "br"].includes(name)) {
+      return "";
+    }
+    if (match.startsWith("</")) return `</${name}>`;
+    if (name === "br") return "<br>";
+    const styleMatch = String(attrs).match(/\sstyle=(["'])(.*?)\1/i);
+    const style = styleMatch?.[2] ?? "";
+    const fontSize = style.match(/font-size:\s*(\d+(?:\.\d+)?)(px|pt)/i);
+    const sizeAttr = String(attrs).match(/\ssize=(["'])([1-7])\1/i);
+    const safeStyle = fontSize ? ` style="font-size:${fontSize[1]}${fontSize[2].toLowerCase()}"` : "";
+    const fontAttr = name === "font" && sizeAttr ? ` size="${sizeAttr[2]}"` : "";
+    return `<${name}${safeStyle}${fontAttr}>`;
+  });
+
+  return value;
+}
+
+function richTextToHtml(content: unknown): string {
+  return looksLikeHtml(content) ? sanitizeRichHtml(content) : mdToHtml(content);
 }
 
 function mdToHtml(md: unknown): string {
@@ -289,16 +326,16 @@ export function renderPreviewHtml(payload: JsonObject): string {
       }
     }
 
-    let rendered = mdToHtml(content);
+    let rendered = richTextToHtml(content);
     for (const [token, html] of figureTokens) {
       rendered = rendered
         .replaceAll(`<p>${token}</p>`, html)
         .replaceAll(token, html);
     }
 
-    return `<div class="section" id="section-${si}">
+    return `<div class="section" id="section-${si}" data-section-id="${esc(s.id ?? "")}">
       <div class="section-title">${esc(String(s.title ?? `Section ${si + 1}`))}</div>
-      ${rendered}
+      <div class="section-body" data-section-id="${esc(s.id ?? "")}">${rendered}</div>
     </div>`;
   }).join("\n");
 

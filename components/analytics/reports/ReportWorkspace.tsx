@@ -6,17 +6,23 @@ import Link from "next/link";
 import {
   ArrowRight,
   BarChart2,
+  Bold,
   Check,
   Download,
   FileText,
+  Italic,
   LayoutDashboard,
+  List,
+  ListOrdered,
   Loader2,
   Lock,
   Pencil,
   Plus,
   RefreshCw,
+  Save,
   Send,
   Sparkles,
+  Underline,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -82,6 +88,7 @@ type BusyAction =
   | "approveReport"
   | "lockReport"
   | "jobPoll"
+  | "previewSave"
   | `section:${string}`
   | `export:${ReportExportFormat}`;
 
@@ -124,6 +131,11 @@ function formatDate(value?: string) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function cssString(value: string) {
+  if (typeof CSS !== "undefined" && CSS.escape) return CSS.escape(value);
+  return value.replace(/["\\]/g, "\\$&");
 }
 
 async function readJson<T>(res: Response): Promise<T> {
@@ -497,12 +509,41 @@ function GeneratedReportViewer({
   previewHtml,
   loading,
   sections,
+  saving,
+  onSaveEdits,
 }: {
   previewHtml?: string;
   loading: boolean;
   sections: ReportSection[];
+  saving?: boolean;
+  onSaveEdits: (edits: Array<{ section: ReportSection; content: string }>) => Promise<void>;
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [fontSize, setFontSize] = useState("11");
+
+  const makeEditable = useCallback(() => {
+    const doc = iframeRef.current?.contentDocument;
+    if (!doc) return;
+    doc.querySelectorAll<HTMLElement>(".section-body").forEach((body) => {
+      body.contentEditable = "true";
+      body.spellcheck = true;
+      body.style.outline = "none";
+      body.style.minHeight = "24px";
+    });
+    const style = doc.createElement("style");
+    style.textContent = `
+      .section-body[contenteditable="true"]:focus {
+        box-shadow: inset 3px 0 0 #4f46e5;
+        background: #fbfdff;
+      }
+      .section-body[contenteditable="true"] {
+        padding: 4px 6px;
+        margin: 0 -6px;
+        border-radius: 4px;
+      }
+    `;
+    doc.head.appendChild(style);
+  }, []);
 
   useEffect(() => {
     if (!previewHtml || !iframeRef.current) return;
@@ -511,7 +552,61 @@ function GeneratedReportViewer({
     doc.open();
     doc.write(previewHtml);
     doc.close();
-  }, [previewHtml]);
+    makeEditable();
+  }, [makeEditable, previewHtml]);
+
+  function runEditorCommand(command: string, value?: string) {
+    const doc = iframeRef.current?.contentDocument;
+    const win = iframeRef.current?.contentWindow;
+    if (!doc || !win) return;
+    win.focus();
+    doc.execCommand(command, false, value);
+  }
+
+  function applyFontSize(size: string) {
+    setFontSize(size);
+    const doc = iframeRef.current?.contentDocument;
+    if (!doc) return;
+    runEditorCommand("fontSize", "7");
+    doc.querySelectorAll<HTMLFontElement>('font[size="7"]').forEach((font) => {
+      const span = doc.createElement("span");
+      span.style.fontSize = `${size}pt`;
+      span.innerHTML = font.innerHTML;
+      font.replaceWith(span);
+    });
+  }
+
+  function serializeSectionBody(body: HTMLElement): string {
+    const clone = body.cloneNode(true) as HTMLElement;
+    clone.querySelectorAll<HTMLElement>(".report-fig").forEach((figure) => {
+      const number = figure.getAttribute("data-figure-number");
+      const token = document.createElement("p");
+      token.textContent = number ? `{{FIGURE:${number}}}` : "";
+      figure.replaceWith(token);
+    });
+    clone.querySelectorAll<HTMLElement>("[contenteditable], [data-section-id]").forEach((element) => {
+      element.removeAttribute("contenteditable");
+      element.removeAttribute("data-section-id");
+    });
+    return clone.innerHTML.trim();
+  }
+
+  async function savePreviewEdits() {
+    const doc = iframeRef.current?.contentDocument;
+    if (!doc) return;
+    const edits = sections.flatMap((section) => {
+      const body = doc.querySelector<HTMLElement>(`.section-body[data-section-id="${cssString(section.id)}"]`);
+      if (!body) return [];
+      const content = serializeSectionBody(body);
+      const current = (section.editedContent ?? section.generatedContent ?? "").trim();
+      return content && content !== current ? [{ section, content }] : [];
+    });
+    if (edits.length === 0) {
+      toast.success("No preview edits to save");
+      return;
+    }
+    await onSaveEdits(edits);
+  }
 
   if (loading) {
     return (
@@ -526,33 +621,70 @@ function GeneratedReportViewer({
   }
 
   return (
-    <div className="flex gap-0 rounded-lg border bg-white overflow-hidden" style={{ height: "calc(100vh - 250px)", minHeight: "680px" }}>
-      <aside className="w-56 border-r bg-slate-50 p-3 overflow-y-auto flex-shrink-0">
-        <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Navigate</h4>
-        <nav className="space-y-0.5">
-          {(sections ?? []).map((section, index) => (
-            <button
-              key={section.id}
-              type="button"
-              className="w-full text-left text-xs text-slate-600 hover:text-slate-900 hover:bg-slate-100 px-2 py-1 rounded truncate block"
-              onClick={() => {
-                const doc = iframeRef.current?.contentDocument;
-                if (!doc) return;
-                const el = doc.getElementById(`section-${index}`);
-                if (el) el.scrollIntoView({ behavior: "smooth" });
-              }}
-            >
-              {section.title || `Section ${index + 1}`}
-            </button>
+    <div className="rounded-lg border bg-white overflow-hidden">
+      <div className="flex flex-wrap items-center gap-1 border-b bg-slate-50 px-3 py-2">
+        <Button type="button" size="icon-sm" variant="ghost" onClick={() => runEditorCommand("bold")} aria-label="Bold">
+          <Bold className="h-4 w-4" />
+        </Button>
+        <Button type="button" size="icon-sm" variant="ghost" onClick={() => runEditorCommand("italic")} aria-label="Italic">
+          <Italic className="h-4 w-4" />
+        </Button>
+        <Button type="button" size="icon-sm" variant="ghost" onClick={() => runEditorCommand("underline")} aria-label="Underline">
+          <Underline className="h-4 w-4" />
+        </Button>
+        <Separator orientation="vertical" className="mx-1 h-6" />
+        <Button type="button" size="icon-sm" variant="ghost" onClick={() => runEditorCommand("insertUnorderedList")} aria-label="Bulleted list">
+          <List className="h-4 w-4" />
+        </Button>
+        <Button type="button" size="icon-sm" variant="ghost" onClick={() => runEditorCommand("insertOrderedList")} aria-label="Numbered list">
+          <ListOrdered className="h-4 w-4" />
+        </Button>
+        <Separator orientation="vertical" className="mx-1 h-6" />
+        <select
+          className="h-8 rounded-md border bg-white px-2 text-xs"
+          value={fontSize}
+          onChange={(event) => applyFontSize(event.target.value)}
+          aria-label="Font size"
+        >
+          {["9", "10", "11", "12", "14", "16", "18"].map((size) => (
+            <option key={size} value={size}>{size} pt</option>
           ))}
-        </nav>
-      </aside>
-      <iframe
-        ref={iframeRef}
-        className="h-full flex-1 w-full border-0"
-        title="Report preview"
-        sandbox="allow-scripts allow-same-origin"
-      />
+        </select>
+        <div className="ml-auto">
+          <Button type="button" size="sm" onClick={savePreviewEdits} disabled={saving} className="gap-2">
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            Save edits
+          </Button>
+        </div>
+      </div>
+      <div className="flex gap-0" style={{ height: "calc(100vh - 294px)", minHeight: "680px" }}>
+        <aside className="w-56 border-r bg-slate-50 p-3 overflow-y-auto flex-shrink-0">
+          <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Navigate</h4>
+          <nav className="space-y-0.5">
+            {(sections ?? []).map((section, index) => (
+              <button
+                key={section.id}
+                type="button"
+                className="w-full text-left text-xs text-slate-600 hover:text-slate-900 hover:bg-slate-100 px-2 py-1 rounded truncate block"
+                onClick={() => {
+                  const doc = iframeRef.current?.contentDocument;
+                  if (!doc) return;
+                  const el = doc.getElementById(`section-${index}`);
+                  if (el) el.scrollIntoView({ behavior: "smooth" });
+                }}
+              >
+                {section.title || `Section ${index + 1}`}
+              </button>
+            ))}
+          </nav>
+        </aside>
+        <iframe
+          ref={iframeRef}
+          className="h-full flex-1 w-full border-0"
+          title="Report preview"
+          sandbox="allow-scripts allow-same-origin"
+        />
+      </div>
     </div>
   );
 }
@@ -838,6 +970,18 @@ export function ReportWorkspace() {
         body: JSON.stringify({ editedContent: content, status: "edited" }),
       }));
     }, "Section saved");
+  }
+
+  async function savePreviewEdits(edits: Array<{ section: ReportSection; content: string }>) {
+    await runProjectAction("previewSave", async () => {
+      await Promise.all(edits.map(async ({ section, content }) =>
+        readJson(await fetch(`/api/reports/sections/${section.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ editedContent: content, status: "edited" }),
+        }))
+      ));
+    }, edits.length === 1 ? "Preview edit saved" : "Preview edits saved");
   }
 
   async function regenerateSection(section: ReportSection) {
@@ -1171,6 +1315,8 @@ export function ReportWorkspace() {
                       previewHtml={previewHtml}
                       loading={previewLoading}
                       sections={sections}
+                      saving={busyAction === "previewSave"}
+                      onSaveEdits={savePreviewEdits}
                     />
                   </TabsContent>
 

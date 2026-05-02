@@ -474,6 +474,43 @@ function markdownToHtml(markdown: unknown): string {
   return html.join("\n");
 }
 
+function looksLikeHtml(value: unknown): boolean {
+  return /<\/?(p|h[1-6]|ul|ol|li|strong|b|em|i|u|span|font|br)\b/i.test(String(value ?? ""));
+}
+
+function sanitizeRichHtml(html: unknown): string {
+  let value = String(html ?? "")
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/\son\w+="[^"]*"/gi, "")
+    .replace(/\son\w+='[^']*'/gi, "")
+    .replace(/\son\w+=\S+/gi, "")
+    .replace(/\s(href|src)="[^"]*"/gi, "")
+    .replace(/\s(href|src)='[^']*'/gi, "");
+
+  value = value.replace(/<\/?([a-z][a-z0-9]*)\b([^>]*)>/gi, (match, tag, attrs) => {
+    const name = String(tag).toLowerCase();
+    if (!["p", "h1", "h2", "h3", "ul", "ol", "li", "strong", "b", "em", "i", "u", "span", "font", "br"].includes(name)) {
+      return "";
+    }
+    if (match.startsWith("</")) return `</${name}>`;
+    if (name === "br") return "<br>";
+    const styleMatch = String(attrs).match(/\sstyle=(["'])(.*?)\1/i);
+    const style = styleMatch?.[2] ?? "";
+    const fontSize = style.match(/font-size:\s*(\d+(?:\.\d+)?)(px|pt)/i);
+    const sizeAttr = String(attrs).match(/\ssize=(["'])([1-7])\1/i);
+    const safeStyle = fontSize ? ` style="font-size:${fontSize[1]}${fontSize[2].toLowerCase()}"` : "";
+    const fontAttr = name === "font" && sizeAttr ? ` size="${sizeAttr[2]}"` : "";
+    return `<${name}${safeStyle}${fontAttr}>`;
+  });
+
+  return value;
+}
+
+function richTextToHtml(content: unknown): string {
+  return looksLikeHtml(content) ? sanitizeRichHtml(content) : markdownToHtml(content);
+}
+
 function inlineMarkdown(value: unknown): string {
   return escapeHtml(value)
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
@@ -492,6 +529,14 @@ function plainTextFromMarkdown(value: unknown): string {
     .replace(/\[(.*?)\]\(.*?\)/g, "$1");
 }
 
+function plainTextFromRichText(value: unknown): string {
+  return plainTextFromMarkdown(String(value ?? "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|h[1-6]|li)>/gi, "\n")
+    .replace(/<li[^>]*>/gi, "• ")
+    .replace(/<[^>]+>/g, ""));
+}
+
 export function renderReportHtml(payload: JsonObject, options: ReportExportOptions = {}): string {
   const title = titleFromPayload(payload);
   const sections = asRecordArray(payload.sections);
@@ -500,7 +545,7 @@ export function renderReportHtml(payload: JsonObject, options: ReportExportOptio
 
   const sectionHtml = sections.map((section) => {
     const content = String(section.content_markdown ?? "");
-    let rendered = markdownToHtml(content);
+    let rendered = richTextToHtml(content);
 
     // Replace {{FIGURE:N}} placeholders with inline SVGs
     if (includeCharts) {
@@ -597,7 +642,7 @@ export function renderReportText(payload: JsonObject, options: ReportExportOptio
   for (const section of sections) {
     lines.push(String(section.title ?? "Untitled section").toUpperCase());
 
-    let content = plainTextFromMarkdown(section.content_markdown);
+    let content = plainTextFromRichText(section.content_markdown);
     // Replace {{FIGURE:N}} with text references
     const record = section as Record<string, unknown>;
     const embeddedFigures = Array.isArray(record.embedded_figures) ? record.embedded_figures : [];
@@ -723,7 +768,8 @@ function docxTextParagraph(text: string, heading?: (typeof HeadingLevel)[keyof t
 }
 
 function docxMarkdown(markdown: unknown): Paragraph[] {
-  return String(markdown ?? "")
+  const content = looksLikeHtml(markdown) ? plainTextFromRichText(markdown) : String(markdown ?? "");
+  return content
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean)
