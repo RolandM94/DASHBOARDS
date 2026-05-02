@@ -35,6 +35,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
+import { renderPreviewHtml } from "@/lib/reports/previewRenderer";
 import { useCanvasStore } from "@/store/canvasStore";
 import { ReportTemplateEditor, ReportTemplateList } from "./ReportTemplateEditor";
 import type {
@@ -546,13 +547,9 @@ function GeneratedReportViewer({
   }, []);
 
   useEffect(() => {
-    if (!previewHtml || !iframeRef.current) return;
-    const doc = iframeRef.current.contentDocument;
-    if (!doc) return;
-    doc.open();
-    doc.write(previewHtml);
-    doc.close();
-    makeEditable();
+    if (!previewHtml) return;
+    const frame = iframeRef.current;
+    if (frame?.contentDocument?.readyState === "complete") makeEditable();
   }, [makeEditable, previewHtml]);
 
   function runEditorCommand(command: string, value?: string) {
@@ -608,7 +605,7 @@ function GeneratedReportViewer({
     await onSaveEdits(edits);
   }
 
-  if (loading) {
+  if (loading && !previewHtml) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -623,6 +620,12 @@ function GeneratedReportViewer({
   return (
     <div className="rounded-lg border bg-white overflow-hidden">
       <div className="flex flex-wrap items-center gap-1 border-b bg-slate-50 px-3 py-2">
+        {loading && (
+          <div className="mr-2 inline-flex items-center gap-2 rounded-md bg-white px-2 py-1 text-xs text-muted-foreground">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            Refreshing preview
+          </div>
+        )}
         <Button type="button" size="icon-sm" variant="ghost" onClick={() => runEditorCommand("bold")} aria-label="Bold">
           <Bold className="h-4 w-4" />
         </Button>
@@ -682,6 +685,8 @@ function GeneratedReportViewer({
           ref={iframeRef}
           className="h-full flex-1 w-full border-0"
           title="Report preview"
+          srcDoc={previewHtml}
+          onLoad={makeEditable}
           sandbox="allow-scripts allow-same-origin"
         />
       </div>
@@ -806,6 +811,21 @@ export function ReportWorkspace() {
 
   const selectedProject = projects.find((project) => project.id === selectedId);
   const latestBlueprint = blueprints[0];
+  const fallbackPreviewHtml = useMemo(() => {
+    if (previewHtml || !selectedProject) return undefined;
+    const previewSections = sections
+      .map((section) => ({
+        id: section.id,
+        title: section.title,
+        content_markdown: section.editedContent ?? section.generatedContent ?? "",
+      }))
+      .filter((section) => section.content_markdown.trim().length > 0);
+    if (previewSections.length === 0) return undefined;
+    return renderPreviewHtml({
+      title: latestBlueprint?.title ?? selectedProject.name,
+      sections: previewSections,
+    });
+  }, [latestBlueprint?.title, previewHtml, sections, selectedProject]);
 
   const loadProjectDetails = useCallback(async (projectId: string) => {
     const [blueprintData, sectionData, exportData, auditData] = await Promise.all([
@@ -1312,7 +1332,7 @@ export function ReportWorkspace() {
 
                   <TabsContent value="preview">
                     <GeneratedReportViewer
-                      previewHtml={previewHtml}
+                      previewHtml={previewHtml ?? fallbackPreviewHtml}
                       loading={previewLoading}
                       sections={sections}
                       saving={busyAction === "previewSave"}
