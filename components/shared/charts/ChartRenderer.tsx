@@ -228,6 +228,23 @@ function formatCell(val: unknown): string {
   return String(val ?? "");
 }
 
+function formatKpiValue(val: unknown): { display: string; full: string; compact: boolean } {
+  if (typeof val !== "number" || !Number.isFinite(val)) {
+    const value = String(val ?? "—");
+    return { display: value, full: value, compact: false };
+  }
+
+  const full = val.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  const abs = Math.abs(val);
+  let display = full;
+  if (abs >= 1_000_000_000_000) display = `${(val / 1_000_000_000_000).toFixed(2).replace(/\.?0+$/, "")}T`;
+  else if (abs >= 1_000_000_000) display = `${(val / 1_000_000_000).toFixed(2).replace(/\.?0+$/, "")}B`;
+  else if (abs >= 1_000_000) display = `${(val / 1_000_000).toFixed(2).replace(/\.?0+$/, "")}M`;
+  else if (abs >= 100_000) display = `${(val / 1_000).toFixed(1).replace(/\.?0+$/, "")}K`;
+
+  return { display, full, compact: display !== full };
+}
+
 function truncate(s: string, max: number): string {
   return s.length > max ? s.slice(0, max - 1) + "…" : s;
 }
@@ -465,23 +482,29 @@ export function ChartRenderer({ chartData, chartType, height = 320, logScale = f
   // ── KPI ──────────────────────────────────────────────────────────
   if (chartType === "kpi") {
     return (
-      <div className="flex flex-wrap gap-3 p-3 h-full content-start">
+      <div
+        className="grid gap-3 p-3 h-full content-start overflow-auto"
+        style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(190px, 100%), 1fr))" }}
+      >
         {yKeys.map((key, i) => {
           const val = data[0]?.[key];
+          const formatted = formatKpiValue(val);
           const color = COLORS[i % COLORS.length];
           return (
             <div
               key={key}
-              className="border rounded-xl p-5 flex-1 min-w-[140px]"
+              className="min-w-0 overflow-hidden border rounded-lg px-4 py-4"
               style={{ borderColor: `${color}40`, backgroundColor: `${color}12` }}
             >
-              <p className="text-[10px] font-bold mb-2 truncate uppercase tracking-widest" style={{ color }}>
+              <p className="text-[10px] font-bold mb-2 truncate uppercase tracking-widest" style={{ color }} title={key}>
                 {key}
               </p>
-              <p className="text-3xl font-bold tabular-nums tracking-tight text-slate-800">
-                {typeof val === "number"
-                  ? val.toLocaleString(undefined, { maximumFractionDigits: 2 })
-                  : String(val ?? "—")}
+              <p
+                className="min-w-0 truncate font-bold tabular-nums tracking-tight text-slate-800"
+                style={{ fontSize: formatted.display.length > 10 ? "1.35rem" : formatted.display.length > 7 ? "1.65rem" : "2rem" }}
+                title={formatted.compact ? formatted.full : undefined}
+              >
+                {formatted.display}
               </p>
             </div>
           );

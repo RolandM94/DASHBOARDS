@@ -34,6 +34,21 @@ function axisValue(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
+function kpiValue(value: unknown): { display: string; full: string } {
+  const num = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+  if (!Number.isFinite(num)) {
+    const text = String(value ?? "—");
+    return { display: text, full: text };
+  }
+  const full = num.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  const abs = Math.abs(num);
+  if (abs >= 1_000_000_000_000) return { display: `${(num / 1_000_000_000_000).toFixed(2).replace(/\.?0+$/, "")}T`, full };
+  if (abs >= 1_000_000_000) return { display: `${(num / 1_000_000_000).toFixed(2).replace(/\.?0+$/, "")}B`, full };
+  if (abs >= 1_000_000) return { display: `${(num / 1_000_000).toFixed(2).replace(/\.?0+$/, "")}M`, full };
+  if (abs >= 100_000) return { display: `${(num / 1_000).toFixed(1).replace(/\.?0+$/, "")}K`, full };
+  return { display: full, full };
+}
+
 function yAxisTicks(maxValue: number, pad: { t: number; l: number }, cw: number, ch: number): string {
   const max = Math.max(maxValue, 1);
   return Array.from({ length: 5 }, (_, index) => {
@@ -188,8 +203,11 @@ function figureHtml(figure: R): string {
   else if (ct.includes("area")) chart = svgArea(figure);
   else if (ct === "kpi") {
     const { rows, yKeys } = parseChart(figure.query_output as JsonObject);
-    const v = rows.length > 0 && yKeys.length > 0 ? rows[0].values[0] : 0;
-    chart = `<div class="kpi-box"><span class="kpi-val">${v.toLocaleString()}</span><span class="kpi-lbl">${esc(yKeys[0] ?? "Value")}</span></div>`;
+    const row = rows[0];
+    chart = `<div class="kpi-grid">${yKeys.map((key, index) => {
+      const value = kpiValue(row?.values[index] ?? 0);
+      return `<div class="kpi-box"><span class="kpi-lbl" title="${esc(key)}">${esc(key)}</span><span class="kpi-val" title="${esc(value.full)}">${esc(value.display)}</span></div>`;
+    }).join("")}</div>`;
   } else {
     const { rows, columns } = parseChart(figure.query_output as JsonObject);
     const hdrs = columns.slice(0, 8);
@@ -282,9 +300,10 @@ body { font-family: "Times New Roman", Times, serif; font-size: 11pt; color: #1e
 .report-fig figcaption { font-size: 11px; color: #94a3b8; margin-top: 8px; font-style: italic; }
 .chart-svg { display: block; margin: 0 auto; max-width: 100%; height: auto; }
 .chart-na { color: #94a3b8; font-style: italic; text-align: center; padding: 32px; }
-.kpi-box { border: 1px solid #e2e8f0; border-radius: 10px; padding: 24px; text-align: center; background: #f8fafc; margin: 16px auto; max-width: 280px; }
-.kpi-val { font-size: 36px; font-weight: 800; color: #0f172a; display: block; }
-.kpi-lbl { font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; }
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 16px 0; }
+.kpi-box { min-width: 0; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; text-align: left; background: #f8fafc; overflow: hidden; }
+.kpi-val { font-size: 24px; font-weight: 800; color: #0f172a; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.15; }
+.kpi-lbl { font-size: 10px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 8px; }
 .fig-tbl { width: 100%; border-collapse: collapse; font-size: 12px; margin: 16px 0; }
 .fig-tbl th { background: #f1f5f9; text-align: left; padding: 6px 12px; border: 1px solid #e2e8f0; }
 .fig-tbl td { padding: 5px 12px; border: 1px solid #e2e8f0; }

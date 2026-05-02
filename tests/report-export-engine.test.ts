@@ -196,6 +196,38 @@ test("rendered reports preserve safe rich text edits", () => {
   assert.match(html, /font-size:12pt/);
 });
 
+test("KPI figures render compact multi-metric cards", () => {
+  const kpiPayload = structuredClone(payload);
+  kpiPayload.sections[1].embedded_figures[0] = {
+    figure_number: 2,
+    widget_id: "widget-kpi",
+    title: "Budget Overview KPIs",
+    widget_type: "kpi",
+    visual_config: { chartType: "kpi" },
+    query_output: {
+      x_key: "summary",
+      y_keys: ["Total Appropriations", "Total Amount Spent", "Average % Completed"],
+      columns: ["summary", "Total Appropriations", "Total Amount Spent", "Average % Completed"],
+      rows: [{
+        summary: "Budget",
+        "Total Appropriations": 23633664681159.25,
+        "Total Amount Spent": 25394254047039.48,
+        "Average % Completed": 55.9011,
+      }],
+    },
+  };
+
+  const preview = renderPreviewHtml(kpiPayload);
+  const html = renderReportHtml(kpiPayload);
+
+  assert.match(preview, /class="kpi-grid"/);
+  assert.match(preview, />23\.63T</);
+  assert.match(preview, />25\.39T</);
+  assert.match(preview, />55\.9</);
+  assert.match(html, /class="kpi-grid"/);
+  assert.match(html, /text-overflow: ellipsis/);
+});
+
 test("chart legends reserve space and avoid overlapping chart labels", () => {
   const chartPayload = structuredClone(payload);
   chartPayload.sections[1].embedded_figures[0].query_output.y_keys = [

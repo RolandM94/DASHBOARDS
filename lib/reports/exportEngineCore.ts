@@ -101,6 +101,21 @@ function axisTickLabel(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
+function kpiDisplayValue(value: unknown): { display: string; full: string } {
+  const num = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+  if (!Number.isFinite(num)) {
+    const text = String(value ?? "—");
+    return { display: text, full: text };
+  }
+  const full = num.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  const abs = Math.abs(num);
+  if (abs >= 1_000_000_000_000) return { display: `${(num / 1_000_000_000_000).toFixed(2).replace(/\.?0+$/, "")}T`, full };
+  if (abs >= 1_000_000_000) return { display: `${(num / 1_000_000_000).toFixed(2).replace(/\.?0+$/, "")}B`, full };
+  if (abs >= 1_000_000) return { display: `${(num / 1_000_000).toFixed(2).replace(/\.?0+$/, "")}M`, full };
+  if (abs >= 100_000) return { display: `${(num / 1_000).toFixed(1).replace(/\.?0+$/, "")}K`, full };
+  return { display: full, full };
+}
+
 function renderYAxisTicks(maxValue: number, padding: { top: number; left: number }, chartW: number, chartH: number): string {
   const max = Math.max(maxValue, 1);
   return Array.from({ length: 5 }, (_, index) => {
@@ -341,9 +356,11 @@ function renderFigureHtml(figure: FigureData): string {
     chartHtml = svgAreaChart(figure);
   } else if (chartType === "kpi") {
     const { rows, yKeys } = parseChartData(figure.query_output);
-    const value = rows.length > 0 && yKeys.length > 0 ? rows[0].values[0] : 0;
-    const label = yKeys[0] ?? "Value";
-    chartHtml = `<div class="kpi-box"><span class="kpi-value">${value.toLocaleString()}</span><span class="kpi-label">${escapeHtml(label)}</span></div>`;
+    const row = rows[0];
+    chartHtml = `<div class="kpi-grid">${yKeys.map((key, index) => {
+      const value = kpiDisplayValue(row?.values[index] ?? 0);
+      return `<div class="kpi-box"><span class="kpi-label" title="${escapeHtml(key)}">${escapeHtml(key)}</span><span class="kpi-value" title="${escapeHtml(value.full)}">${escapeHtml(value.display)}</span></div>`;
+    }).join("")}</div>`;
   } else {
     // table or unknown — render as data table
     const { rows, columns } = parseChartData(figure.query_output);
@@ -603,9 +620,10 @@ export function renderReportHtml(payload: JsonObject, options: ReportExportOptio
     .report-figure { margin: 24px 0; text-align: center; }
     .report-figure svg { display: block; margin: 0 auto; }
     .report-figure figcaption { font-size: 12px; color: #6b7280; margin-top: 8px; font-style: italic; }
-    .kpi-box { border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; text-align: center; background: #f9fafb; margin: 16px auto; max-width: 300px; }
-    .kpi-value { font-size: 32px; font-weight: 700; color: #111827; display: block; }
-    .kpi-label { font-size: 12px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; }
+    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 16px 0; }
+    .kpi-box { min-width: 0; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; text-align: left; background: #f9fafb; overflow: hidden; }
+    .kpi-value { font-size: 24px; font-weight: 700; color: #111827; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.15; }
+    .kpi-label { font-size: 10px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 8px; }
     .figure-table { width: 100%; border-collapse: collapse; font-size: 12px; margin: 16px 0; }
     .figure-table th { background: #f3f4f6; text-align: left; padding: 6px 10px; border: 1px solid #e5e7eb; }
     .figure-table td { padding: 4px 10px; border: 1px solid #e5e7eb; }
