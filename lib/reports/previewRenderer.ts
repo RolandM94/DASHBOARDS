@@ -22,6 +22,42 @@ function nv(value: unknown, fb = 0): number {
 
 interface ChartRow { label: string; values: number[] }
 
+function shortLabel(value: string, max = 18): string {
+  return value.length > max ? `${value.slice(0, Math.max(0, max - 1))}...` : value;
+}
+
+function axisValue(value: number): string {
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1).replace(/\.0$/, "")}B`;
+  if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+  if (abs >= 1_000) return `${(value / 1_000).toFixed(1).replace(/\.0$/, "")}K`;
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function yAxisTicks(maxValue: number, pad: { t: number; l: number }, cw: number, ch: number): string {
+  const max = Math.max(maxValue, 1);
+  return Array.from({ length: 5 }, (_, index) => {
+    const ratio = index / 4;
+    const value = max * (1 - ratio);
+    const y = pad.t + ratio * ch;
+    return `<line x1="${pad.l}" y1="${y}" x2="${pad.l + cw}" y2="${y}" stroke="#edf2f7" stroke-width="1"/><text x="${pad.l - 8}" y="${y + 3}" text-anchor="end" font-size="9" fill="#64748b">${axisValue(value)}</text>`;
+  }).join("");
+}
+
+function summarizeRows(rows: ChartRow[], limit = 10): ChartRow[] {
+  if (rows.length <= limit) return rows;
+  const sorted = [...rows].sort((a, b) => b.values.reduce((sum, value) => sum + value, 0) - a.values.reduce((sum, value) => sum + value, 0));
+  const top = sorted.slice(0, limit);
+  const rest = sorted.slice(limit);
+  const others = rest.reduce<number[]>((acc, row) => {
+    row.values.forEach((value, index) => {
+      acc[index] = (acc[index] ?? 0) + value;
+    });
+    return acc;
+  }, []);
+  return [...top, { label: "Others", values: others }];
+}
+
 function parseChart(queryOutput: JsonObject): { columns: string[]; rows: ChartRow[]; yKeys: string[] } {
   const rawRows = Array.isArray(queryOutput.rows) ? queryOutput.rows : [];
   const columns = Array.isArray(queryOutput.columns) ? queryOutput.columns.filter((c): c is string => typeof c === "string") : [];
@@ -32,20 +68,21 @@ function parseChart(queryOutput: JsonObject): { columns: string[]; rows: ChartRo
   return {
     columns,
     yKeys,
-    rows: rawRows.map((row) => {
+    rows: summarizeRows(rawRows.map((row) => {
       const record = row && typeof row === "object" && !Array.isArray(row) ? row as R : {};
       return {
         label: String(record[xKey] ?? ""),
         values: yKeys.map((key) => nv(record[key])),
       };
-    }),
+    })),
   };
 }
 
 function svgBar(figure: R, w = 560, h = 340): string {
   const { rows, yKeys } = parseChart(figure.query_output as JsonObject);
   if (rows.length === 0) return `<div class="chart-na">No data for this chart</div>`;
-  const pad = { t: 40, r: 20, b: 80, l: 60 };
+  const legendRows = Math.max(1, Math.ceil(yKeys.length / 2));
+  const pad = { t: 36, r: 20, b: 112 + legendRows * 18, l: 60 };
   const cw = w - pad.l - pad.r;
   const ch = h - pad.t - pad.b;
   const mx = Math.max(...rows.flatMap((r) => r.values), 1);
@@ -53,23 +90,26 @@ function svgBar(figure: R, w = 560, h = 340): string {
   const bw = Math.max(4, (bgw * 0.7) / yKeys.length);
   let bars = "";
   let xLabels = "";
-  const skip = rows.length > 12 ? Math.ceil(rows.length / 8) : 1;
   rows.forEach((row, ri) => {
     row.values.forEach((v, vi) => {
       const x = pad.l + ri * bgw + bgw * 0.15 + vi * bw;
       const bh = Math.max(2, (v / mx) * ch);
       bars += `<rect x="${x}" y="${pad.t + ch - bh}" width="${bw}" height="${bh}" fill="${CHART_COLORS[vi % 8]}" rx="2"/>`;
     });
-    if (ri % skip === 0 || ri === rows.length - 1) {
-      xLabels += `<text x="${pad.l + ri * bgw + bgw / 2}" y="${pad.t + ch + 20}" text-anchor="middle" font-size="11" fill="#374151">${esc(row.label.slice(0, 16))}</text>`;
-    }
+    const lx = pad.l + ri * bgw + bgw / 2;
+    const ly = pad.t + ch + 18;
+    xLabels += `<text x="${lx}" y="${ly}" text-anchor="end" font-size="9" fill="#374151" transform="rotate(-35 ${lx} ${ly})">${esc(shortLabel(row.label, 14))}</text>`;
   });
   let lgd = "";
   yKeys.forEach((k, vi) => {
-    const lx = pad.l + 10 + vi * 120;
-    lgd += `<rect x="${lx}" y="${pad.t + ch + 42}" width="10" height="10" fill="${CHART_COLORS[vi % 8]}" rx="1"/><text x="${lx + 14}" y="${pad.t + ch + 50}" font-size="10" fill="#6b7280">${esc(k)}</text>`;
+    const col = vi % 2;
+    const row = Math.floor(vi / 2);
+    const lx = pad.l + col * 230;
+    const ly = pad.t + ch + 82 + row * 18;
+    lgd += `<rect x="${lx}" y="${ly - 8}" width="10" height="10" fill="${CHART_COLORS[vi % 8]}" rx="1"/><text x="${lx + 14}" y="${ly}" font-size="9" fill="#6b7280">${esc(shortLabel(k, 34))}</text>`;
   });
-  return `<svg viewBox="0 0 ${w} ${h}" class="chart-svg" role="img"><line x1="${pad.l}" y1="${pad.t}" x2="${pad.l}" y2="${pad.t + ch}" stroke="#e5e7eb"/><line x1="${pad.l}" y1="${pad.t + ch}" x2="${pad.l + cw}" y2="${pad.t + ch}" stroke="#e5e7eb"/>${bars}${xLabels}${lgd}</svg>`;
+  const axis = yAxisTicks(mx, pad, cw, ch);
+  return `<svg viewBox="0 0 ${w} ${h}" class="chart-svg" role="img">${axis}<line x1="${pad.l}" y1="${pad.t}" x2="${pad.l}" y2="${pad.t + ch}" stroke="#cbd5e1"/><line x1="${pad.l}" y1="${pad.t + ch}" x2="${pad.l + cw}" y2="${pad.t + ch}" stroke="#cbd5e1"/>${bars}${xLabels}${lgd}</svg>`;
 }
 
 function svgLine(figure: R, w = 560, h = 340): string {
@@ -87,15 +127,16 @@ function svgLine(figure: R, w = 560, h = 340): string {
       els += `<circle cx="${pad.l + (ri / Math.max(rows.length - 1, 1)) * cw}" cy="${pad.t + ch - (row.values[vi] / mx) * ch}" r="3" fill="${CHART_COLORS[vi % 8]}"/>`;
     });
   });
-  return `<svg viewBox="0 0 ${w} ${h}" class="chart-svg" role="img"><line x1="${pad.l}" y1="${pad.t}" x2="${pad.l}" y2="${pad.t + ch}" stroke="#e5e7eb"/><line x1="${pad.l}" y1="${pad.t + ch}" x2="${pad.l + cw}" y2="${pad.t + ch}" stroke="#e5e7eb"/>${els}</svg>`;
+  const axis = yAxisTicks(mx, pad, cw, ch);
+  return `<svg viewBox="0 0 ${w} ${h}" class="chart-svg" role="img">${axis}<line x1="${pad.l}" y1="${pad.t}" x2="${pad.l}" y2="${pad.t + ch}" stroke="#cbd5e1"/><line x1="${pad.l}" y1="${pad.t + ch}" x2="${pad.l + cw}" y2="${pad.t + ch}" stroke="#cbd5e1"/>${els}</svg>`;
 }
 
-function svgPie(figure: R, w = 400, h = 320): string {
+function svgPie(figure: R, w = 640, h = 360): string {
   const { rows } = parseChart(figure.query_output as JsonObject);
   if (rows.length === 0) return `<div class="chart-na">No data for this chart</div>`;
-  const cx = w / 2;
-  const cy = h / 2 - 10;
-  const r = Math.min(cx, cy) - 40;
+  const cx = 170;
+  const cy = h / 2;
+  const r = 125;
   const vals = rows.map((row) => row.values[0] ?? 0);
   const total = Math.max(vals.reduce((s, v) => s + v, 0), 1);
   let slices = "";
@@ -110,9 +151,10 @@ function svgPie(figure: R, w = 400, h = 320): string {
     const x1 = cx + r * Math.cos(sa), y1 = cy + r * Math.sin(sa);
     const x2 = cx + r * Math.cos(ea), y2 = cy + r * Math.sin(ea);
     slices += `<path d="M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${v / total > 0.5 ? 1 : 0} 1 ${x2} ${y2} Z" fill="${CHART_COLORS[i % 8]}" stroke="#fff" stroke-width="1"/>`;
-    lgd += `<rect x="${w - 140}" y="${18 + i * 16}" width="8" height="8" fill="${CHART_COLORS[i % 8]}" rx="1"/><text x="${w - 128}" y="${25 + i * 16}" font-size="9" fill="#6b7280">${esc(row.label)} (${Math.round((v / total) * 100)}%)</text>`;
+    const ly = 72 + i * 18;
+    lgd += `<rect x="340" y="${ly - 8}" width="9" height="9" fill="${CHART_COLORS[i % 8]}" rx="1"/><text x="354" y="${ly}" font-size="10" fill="#475569">${esc(shortLabel(row.label, 34))} (${Math.round((v / total) * 100)}%)</text>`;
   });
-  return `<svg viewBox="0 0 ${w} ${h}" class="chart-svg" role="img">${slices}${lgd}</svg>`;
+  return `<svg viewBox="0 0 ${w} ${h}" class="chart-svg chart-svg-wide" role="img">${slices}${lgd}</svg>`;
 }
 
 function svgArea(figure: R, w = 560, h = 340): string {
@@ -132,7 +174,9 @@ function svgArea(figure: R, w = 560, h = 340): string {
     els += `<path d="M ${pts[0]}${pts.slice(1).map((pt) => ` L ${pt}`).join("")} Z" fill="${CHART_COLORS[vi % 8]}" opacity="0.3"/>`;
     els += `<polyline points="${rows.map((_row, ri) => pts[ri]).join(" ")}" fill="none" stroke="${CHART_COLORS[vi % 8]}" stroke-width="2"/>`;
   });
-  return `<svg viewBox="0 0 ${w} ${h}" class="chart-svg" role="img"><line x1="${pad.l}" y1="${pad.t}" x2="${pad.l}" y2="${pad.t + ch}" stroke="#e5e7eb"/><line x1="${pad.l}" y1="${pad.t + ch}" x2="${pad.l + cw}" y2="${pad.t + ch}" stroke="#e5e7eb"/>${els}</svg>`;
+  const mx = Math.max(...rows.flatMap((row) => row.values), 1);
+  const axis = yAxisTicks(mx, pad, cw, ch);
+  return `<svg viewBox="0 0 ${w} ${h}" class="chart-svg" role="img">${axis}<line x1="${pad.l}" y1="${pad.t}" x2="${pad.l}" y2="${pad.t + ch}" stroke="#cbd5e1"/><line x1="${pad.l}" y1="${pad.t + ch}" x2="${pad.l + cw}" y2="${pad.t + ch}" stroke="#cbd5e1"/>${els}</svg>`;
 }
 
 function figureHtml(figure: R): string {
@@ -161,25 +205,30 @@ function mdToHtml(md: unknown): string {
   for (const line of lines) {
     const t = line.trim();
     if (!t) { if (list) { html.push("</ul>"); list = false; } continue; }
-    if (t.startsWith("### ")) { if (list) { html.push("</ul>"); list = false; } html.push(`<h3>${esc(t.slice(4))}</h3>`); }
-    else if (t.startsWith("## ")) { if (list) { html.push("</ul>"); list = false; } html.push(`<h2>${esc(t.slice(3))}</h2>`); }
-    else if (t.startsWith("# ")) { if (list) { html.push("</ul>"); list = false; } html.push(`<h1>${esc(t.slice(2))}</h1>`); }
-    else if (t.startsWith("- ")) { if (!list) { html.push("<ul>"); list = true; } html.push(`<li>${esc(t.slice(2))}</li>`); }
-    else { if (list) { html.push("</ul>"); list = false; } html.push(`<p>${esc(t)}</p>`); }
+    if (t.startsWith("### ")) { if (list) { html.push("</ul>"); list = false; } html.push(`<h3>${inlineMd(t.slice(4))}</h3>`); }
+    else if (t.startsWith("## ")) { if (list) { html.push("</ul>"); list = false; } html.push(`<h2>${inlineMd(t.slice(3))}</h2>`); }
+    else if (t.startsWith("# ")) { if (list) { html.push("</ul>"); list = false; } html.push(`<h1>${inlineMd(t.slice(2))}</h1>`); }
+    else if (t.startsWith("- ")) { if (!list) { html.push("<ul>"); list = true; } html.push(`<li>${inlineMd(t.slice(2))}</li>`); }
+    else { if (list) { html.push("</ul>"); list = false; } html.push(`<p>${inlineMd(t)}</p>`); }
   }
   if (list) html.push("</ul>");
   return html.join("\n");
 }
 
+function inlineMd(value: unknown): string {
+  return esc(value)
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*(.+?)\*/g, "<em>$1</em>")
+    .replace(/`(.+?)`/g, "<code>$1</code>")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/\*+/g, "");
+}
+
 const STYLE = `
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1e293b; line-height: 1.65; background: #f1f5f9; }
-#preview-wrap { display: flex; min-height: 100vh; }
-#toc { width: 260px; position: sticky; top: 0; height: 100vh; overflow-y: auto; background: #fff; border-right: 1px solid #e2e8f0; padding: 24px 20px; flex-shrink: 0; }
-#toc h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: #94a3b8; margin-bottom: 16px; }
-#toc a { display: block; font-size: 13px; color: #475569; text-decoration: none; padding: 4px 8px; border-radius: 4px; margin-bottom: 2px; }
-#toc a:hover, #toc a.active { background: #f1f5f9; color: #0f172a; font-weight: 600; }
-#document { flex: 1; max-width: 800px; margin: 40px auto; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 56px 64px; min-height: 100vh; }
+body { font-family: "Times New Roman", Times, serif; font-size: 11pt; color: #1e293b; line-height: 1.55; background: #f1f5f9; }
+#preview-wrap { min-height: 100vh; padding: 24px; }
+#document { max-width: 980px; margin: 0 auto; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 56px 72px; min-height: 100vh; }
 .cover { text-align: center; padding: 80px 0 60px; border-bottom: 1px solid #e2e8f0; margin-bottom: 48px; }
 .cover h1 { font-size: 32px; font-weight: 800; color: #0f172a; margin-bottom: 8px; }
 .cover .sub { font-size: 14px; color: #64748b; }
@@ -202,45 +251,54 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .fig-tbl { width: 100%; border-collapse: collapse; font-size: 12px; margin: 16px 0; }
 .fig-tbl th { background: #f1f5f9; text-align: left; padding: 6px 12px; border: 1px solid #e2e8f0; }
 .fig-tbl td { padding: 5px 12px; border: 1px solid #e2e8f0; }
+strong { font-weight: 700; }
+em { font-style: italic; }
+code { font-family: "Courier New", monospace; font-size: 10pt; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 3px; padding: 0 3px; }
 `;
 
 export function renderPreviewHtml(payload: JsonObject): string {
   const title = String((payload.title ?? "Report").toString());
   const sections = Array.isArray(payload.sections) ? payload.sections as R[] : [];
-  const metadata = payload.metadata as R ?? {};
-  const scope = payload.scope as R ?? {};
-  const sourceNote = String(payload.source_note ?? "");
-
-  // Build TOC
-  const tocLinks = sections.map((s, i) => `
-    <a href="#section-${i}" onclick="document.getElementById('section-${i}')?.scrollIntoView({behavior:'smooth'});return false">
-      ${esc(String(s.title ?? `Section ${i + 1}`))}
-    </a>`).join("");
 
   // Build sections with figures
   const sectionHtml = sections.map((s, si) => {
     let content = String(s.content_markdown ?? "");
     const figs = Array.isArray(s.embedded_figures) ? s.embedded_figures as R[] : [];
+    const figureTokens = new Map<string, string>();
 
     // Replace {{FIGURE:N}} with rendered figures
     const used = new Set<number>();
     content = content.replace(/\{\{FIGURE:(\d+)\}\}/g, (_match, num) => {
       const n = Number(num);
       const fig = figs.find((f) => f.figure_number === n);
-      if (fig) { used.add(n); return figureHtml(fig); }
+      if (fig) {
+        const token = `__EYEMARK_FIGURE_${si}_${n}__`;
+        used.add(n);
+        figureTokens.set(token, figureHtml(fig));
+        return token;
+      }
       return `[Figure ${n} not found]`;
     });
 
     // Append unreferenced figures
     for (const fig of figs) {
       if (!used.has(Number(fig.figure_number))) {
-        content += figureHtml(fig);
+        const token = `__EYEMARK_FIGURE_${si}_${Number(fig.figure_number)}__`;
+        figureTokens.set(token, figureHtml(fig));
+        content += `\n\n${token}`;
       }
+    }
+
+    let rendered = mdToHtml(content);
+    for (const [token, html] of figureTokens) {
+      rendered = rendered
+        .replaceAll(`<p>${token}</p>`, html)
+        .replaceAll(token, html);
     }
 
     return `<div class="section" id="section-${si}">
       <div class="section-title">${esc(String(s.title ?? `Section ${si + 1}`))}</div>
-      ${mdToHtml(content)}
+      ${rendered}
     </div>`;
   }).join("\n");
 
@@ -253,26 +311,13 @@ export function renderPreviewHtml(payload: JsonObject): string {
 </head>
 <body>
 <div id="preview-wrap">
-  <nav id="toc">
-    <h3>Contents</h3>
-    ${tocLinks}
-  </nav>
   <div id="document">
     <div class="cover">
       <h1>${esc(title)}</h1>
-      <p class="sub">${esc(sourceNote)}</p>
     </div>
     <div class="toc-page">
       <h2>Table of Contents</h2>
       <ol>${sections.map((s, i) => `<li>${esc(String(s.title ?? `Section ${i + 1}`))}</li>`).join("")}</ol>
-    </div>
-    <div class="meta">
-      <h2>Report Metadata</h2>
-      <pre>${esc(JSON.stringify(metadata, null, 2))}</pre>
-    </div>
-    <div class="meta">
-      <h2>Scope &amp; Filters</h2>
-      <pre>${esc(JSON.stringify(scope, null, 2))}</pre>
     </div>
     ${sectionHtml}
   </div>

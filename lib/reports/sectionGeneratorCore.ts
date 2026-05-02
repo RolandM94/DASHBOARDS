@@ -90,7 +90,10 @@ Write one report section using only the data provided in the input package.
 Rules:
 - Do not invent figures, categories, data fields, widgets, worksheets, filters, sources, or trends.
 - Use exact figures only when they appear in the provided query output rows.
-- Mention active filters when they affect interpretation.
+- Focus on the insight, implication, and user-facing message of the chart or source content.
+- Do not explain worksheet setup, aggregation functions, query mechanics, source snapshot IDs, widget IDs, or internal dashboard implementation details.
+- Do not write technical methodology unless the section explicitly asks for a user-facing methodology summary.
+- Mention filters only when they are important business context for interpreting the insight; do not list raw filter JSON.
 - Separate observation, interpretation, and recommendation when recommendations are requested.
 - If evidence is incomplete, say so in warnings and avoid strong claims.
 - Keep the writing professional, concise, and report-ready.

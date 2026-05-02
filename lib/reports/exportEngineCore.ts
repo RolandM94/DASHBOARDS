@@ -89,6 +89,42 @@ function numericValue(value: unknown, fallback: number): number {
 
 interface ChartRow { label: string; values: number[] }
 
+function shortChartLabel(value: string, max = 18): string {
+  return value.length > max ? `${value.slice(0, Math.max(0, max - 1))}...` : value;
+}
+
+function axisTickLabel(value: number): string {
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1).replace(/\.0$/, "")}B`;
+  if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+  if (abs >= 1_000) return `${(value / 1_000).toFixed(1).replace(/\.0$/, "")}K`;
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function renderYAxisTicks(maxValue: number, padding: { top: number; left: number }, chartW: number, chartH: number): string {
+  const max = Math.max(maxValue, 1);
+  return Array.from({ length: 5 }, (_, index) => {
+    const ratio = index / 4;
+    const value = max * (1 - ratio);
+    const y = padding.top + ratio * chartH;
+    return `<line x1="${padding.left}" y1="${y}" x2="${padding.left + chartW}" y2="${y}" stroke="#edf2f7" stroke-width="1"/><text x="${padding.left - 8}" y="${y + 3}" text-anchor="end" font-size="9" fill="#64748b">${axisTickLabel(value)}</text>`;
+  }).join("");
+}
+
+function summarizeChartRows(rows: ChartRow[], limit = 10): ChartRow[] {
+  if (rows.length <= limit) return rows;
+  const sorted = [...rows].sort((a, b) => b.values.reduce((sum, value) => sum + value, 0) - a.values.reduce((sum, value) => sum + value, 0));
+  const top = sorted.slice(0, limit);
+  const rest = sorted.slice(limit);
+  const others = rest.reduce<number[]>((acc, row) => {
+    row.values.forEach((value, index) => {
+      acc[index] = (acc[index] ?? 0) + value;
+    });
+    return acc;
+  }, []);
+  return [...top, { label: "Others", values: others }];
+}
+
 function parseChartData(queryOutput: JsonObject): { columns: string[]; rows: ChartRow[]; yKeys: string[] } {
   const rawRows = Array.isArray(queryOutput.rows) ? queryOutput.rows : [];
   const columns = Array.isArray(queryOutput.columns) ? queryOutput.columns.filter((c): c is string => typeof c === "string") : [];
@@ -96,13 +132,13 @@ function parseChartData(queryOutput: JsonObject): { columns: string[]; rows: Cha
   const xKey = typeof queryOutput.x_key === "string" ? queryOutput.x_key : columns[0] ?? "label";
   const yKeys = yKeysRaw.length > 0 ? yKeysRaw : columns.filter((c) => c !== xKey);
 
-  const rows = rawRows.map((row) => {
+  const rows = summarizeChartRows(rawRows.map((row) => {
     const record = row && typeof row === "object" && !Array.isArray(row) ? row as Record<string, unknown> : {};
     return {
       label: String(record[xKey] ?? ""),
       values: yKeys.map((key) => numericValue(record[key], 0)),
     };
-  });
+  }));
 
   return { columns, rows, yKeys };
 }
@@ -115,7 +151,8 @@ function svgBarChart(figure: FigureData, width = 560, height = 340): string {
   const { rows, yKeys } = parseChartData(figure.query_output);
   if (rows.length === 0) return `<div class="chart-placeholder">No data available for ${escapeHtml(figure.title)}</div>`;
 
-  const padding = { top: 40, right: 20, bottom: 80, left: 60 };
+  const legendRows = Math.max(1, Math.ceil(yKeys.length / 2));
+  const padding = { top: 36, right: 20, bottom: 112 + legendRows * 18, left: 60 };
   const chartW = width - padding.left - padding.right;
   const chartH = height - padding.top - padding.bottom;
   const maxValue = Math.max(...rows.flatMap((r) => r.values), 1);
@@ -135,25 +172,27 @@ function svgBarChart(figure: FigureData, width = 560, height = 340): string {
   });
 
   let xLabels = "";
-  const skip = rows.length > 12 ? Math.ceil(rows.length / 8) : 1;
   rows.forEach((row, ri) => {
-    if (ri % skip !== 0 && ri !== rows.length - 1) return;
     const x = padding.left + ri * barGroupWidth + barGroupWidth / 2;
-    const label = row.label.slice(0, 16);
-    xLabels += `<text x="${x}" y="${padding.top + chartH + 20}" text-anchor="middle" font-size="11" fill="#374151">${escapeHtml(label)}</text>`;
+    const y = padding.top + chartH + 18;
+    xLabels += `<text x="${x}" y="${y}" text-anchor="end" font-size="9" fill="#374151" transform="rotate(-35 ${x} ${y})">${escapeHtml(shortChartLabel(row.label, 14))}</text>`;
   });
 
   let legend = "";
   yKeys.forEach((key, vi) => {
-    const lx = padding.left + 10 + vi * 120;
-    const ly = padding.top + chartH + 50;
+    const col = vi % 2;
+    const row = Math.floor(vi / 2);
+    const lx = padding.left + col * 230;
+    const ly = padding.top + chartH + 82 + row * 18;
     legend += `<rect x="${lx}" y="${ly - 8}" width="10" height="10" fill="${CHART_COLORS[vi % CHART_COLORS.length]}" rx="1"/>`;
-    legend += `<text x="${lx + 14}" y="${ly}" font-size="10" fill="#6b7280">${escapeHtml(key)}</text>`;
+    legend += `<text x="${lx + 14}" y="${ly}" font-size="9" fill="#6b7280">${escapeHtml(shortChartLabel(key, 34))}</text>`;
   });
 
+  const axis = renderYAxisTicks(maxValue, padding, chartW, chartH);
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="100%" style="max-width:560px" role="img" aria-label="${escapeHtml(figure.title)}">
-    <line x1="${padding.left}" y1="${padding.top}" x2="${padding.left}" y2="${padding.top + chartH}" stroke="#e5e7eb" stroke-width="1"/>
-    <line x1="${padding.left}" y1="${padding.top + chartH}" x2="${padding.left + chartW}" y2="${padding.top + chartH}" stroke="#e5e7eb" stroke-width="1"/>
+    ${axis}
+    <line x1="${padding.left}" y1="${padding.top}" x2="${padding.left}" y2="${padding.top + chartH}" stroke="#cbd5e1" stroke-width="1"/>
+    <line x1="${padding.left}" y1="${padding.top + chartH}" x2="${padding.left + chartW}" y2="${padding.top + chartH}" stroke="#cbd5e1" stroke-width="1"/>
     ${bars}
     ${xLabels}
     ${legend}
@@ -194,21 +233,23 @@ function svgLineChart(figure: FigureData, width = 560, height = 340): string {
     xLabels += `<text x="${x}" y="${padding.top + chartH + 20}" text-anchor="middle" font-size="11" fill="#374151">${escapeHtml(row.label.slice(0, 16))}</text>`;
   });
 
+  const axis = renderYAxisTicks(maxValue, padding, chartW, chartH);
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="100%" style="max-width:560px" role="img" aria-label="${escapeHtml(figure.title)}">
-    <line x1="${padding.left}" y1="${padding.top}" x2="${padding.left}" y2="${padding.top + chartH}" stroke="#e5e7eb" stroke-width="1"/>
-    <line x1="${padding.left}" y1="${padding.top + chartH}" x2="${padding.left + chartW}" y2="${padding.top + chartH}" stroke="#e5e7eb" stroke-width="1"/>
+    ${axis}
+    <line x1="${padding.left}" y1="${padding.top}" x2="${padding.left}" y2="${padding.top + chartH}" stroke="#cbd5e1" stroke-width="1"/>
+    <line x1="${padding.left}" y1="${padding.top + chartH}" x2="${padding.left + chartW}" y2="${padding.top + chartH}" stroke="#cbd5e1" stroke-width="1"/>
     ${lines.join("\n    ")}
     ${xLabels}
   </svg>`;
 }
 
-function svgPieChart(figure: FigureData, width = 400, height = 320): string {
+function svgPieChart(figure: FigureData, width = 640, height = 360): string {
   const { rows, yKeys } = parseChartData(figure.query_output);
   if (rows.length === 0) return `<div class="chart-placeholder">No data available for ${escapeHtml(figure.title)}</div>`;
 
-  const cx = width / 2;
-  const cy = height / 2 - 10;
-  const r = Math.min(cx, cy) - 40;
+  const cx = 170;
+  const cy = height / 2;
+  const r = 125;
   const values = rows.map((row) => row.values[0] ?? 0);
   const total = Math.max(values.reduce((sum, v) => sum + v, 0), 1);
 
@@ -230,12 +271,12 @@ function svgPieChart(figure: FigureData, width = 400, height = 320): string {
 
     slices += `<path d="M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z" fill="${CHART_COLORS[index % CHART_COLORS.length]}" stroke="#fff" stroke-width="1"/>`;
 
-    const ly = 20 + index * 16;
-    legend += `<rect x="${width - 140}" y="${ly - 6}" width="8" height="8" fill="${CHART_COLORS[index % CHART_COLORS.length]}" rx="1"/>`;
-    legend += `<text x="${width - 128}" y="${ly}" font-size="9" fill="#6b7280">${escapeHtml(row.label)} (${Math.round(value / total * 100)}%)</text>`;
+    const ly = 72 + index * 18;
+    legend += `<rect x="340" y="${ly - 8}" width="9" height="9" fill="${CHART_COLORS[index % CHART_COLORS.length]}" rx="1"/>`;
+    legend += `<text x="354" y="${ly}" font-size="10" fill="#475569">${escapeHtml(shortChartLabel(row.label, 34))} (${Math.round(value / total * 100)}%)</text>`;
   });
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="100%" style="max-width:400px" role="img" aria-label="${escapeHtml(figure.title)}">
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="100%" style="max-width:640px" role="img" aria-label="${escapeHtml(figure.title)}">
     ${slices}
     ${legend}
   </svg>`;
@@ -277,9 +318,11 @@ function svgAreaChart(figure: FigureData, width = 560, height = 340): string {
     areas.push(`<polyline points="${points.join(" ")}" fill="none" stroke="${color}" stroke-width="2"/>`);
   });
 
+  const axis = renderYAxisTicks(maxValue, padding, chartW, chartH);
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="100%" style="max-width:560px" role="img" aria-label="${escapeHtml(figure.title)}">
-    <line x1="${padding.left}" y1="${padding.top}" x2="${padding.left}" y2="${padding.top + chartH}" stroke="#e5e7eb" stroke-width="1"/>
-    <line x1="${padding.left}" y1="${padding.top + chartH}" x2="${padding.left + chartW}" y2="${padding.top + chartH}" stroke="#e5e7eb" stroke-width="1"/>
+    ${axis}
+    <line x1="${padding.left}" y1="${padding.top}" x2="${padding.left}" y2="${padding.top + chartH}" stroke="#cbd5e1" stroke-width="1"/>
+    <line x1="${padding.left}" y1="${padding.top + chartH}" x2="${padding.left + chartW}" y2="${padding.top + chartH}" stroke="#cbd5e1" stroke-width="1"/>
     ${areas.join("\n    ")}
   </svg>`;
 }
@@ -399,31 +442,31 @@ function markdownToHtml(markdown: unknown): string {
         html.push("</ul>");
         listOpen = false;
       }
-      html.push(`<h3>${escapeHtml(trimmed.slice(4))}</h3>`);
+      html.push(`<h3>${inlineMarkdown(trimmed.slice(4))}</h3>`);
     } else if (trimmed.startsWith("## ")) {
       if (listOpen) {
         html.push("</ul>");
         listOpen = false;
       }
-      html.push(`<h2>${escapeHtml(trimmed.slice(3))}</h2>`);
+      html.push(`<h2>${inlineMarkdown(trimmed.slice(3))}</h2>`);
     } else if (trimmed.startsWith("# ")) {
       if (listOpen) {
         html.push("</ul>");
         listOpen = false;
       }
-      html.push(`<h1>${escapeHtml(trimmed.slice(2))}</h1>`);
+      html.push(`<h1>${inlineMarkdown(trimmed.slice(2))}</h1>`);
     } else if (trimmed.startsWith("- ")) {
       if (!listOpen) {
         html.push("<ul>");
         listOpen = true;
       }
-      html.push(`<li>${escapeHtml(trimmed.slice(2))}</li>`);
+      html.push(`<li>${inlineMarkdown(trimmed.slice(2))}</li>`);
     } else {
       if (listOpen) {
         html.push("</ul>");
         listOpen = false;
       }
-      html.push(`<p>${escapeHtml(trimmed)}</p>`);
+      html.push(`<p>${inlineMarkdown(trimmed)}</p>`);
     }
   }
 
@@ -431,22 +474,28 @@ function markdownToHtml(markdown: unknown): string {
   return html.join("\n");
 }
 
+function inlineMarkdown(value: unknown): string {
+  return escapeHtml(value)
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*(.+?)\*/g, "<em>$1</em>")
+    .replace(/`(.+?)`/g, "<code>$1</code>")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/\*+/g, "");
+}
+
 function plainTextFromMarkdown(value: unknown): string {
   return String(value ?? "")
     .replace(/^#{1,6}\s+/gm, "")
     .replace(/^\s*-\s+/gm, "• ")
     .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/\*(.*?)\*/g, "$1")
     .replace(/\[(.*?)\]\(.*?\)/g, "$1");
 }
 
 export function renderReportHtml(payload: JsonObject, options: ReportExportOptions = {}): string {
   const title = titleFromPayload(payload);
   const sections = asRecordArray(payload.sections);
-  const appendices = shouldIncludeAppendix(options) ? asRecordArray(payload.appendices) : [];
   const includeCharts = shouldIncludeCharts(options);
-  const metadata = asRecord(payload.metadata);
-  const scope = asRecord(payload.scope);
-  const auditNote = asRecord(payload.audit_note);
   const allFigures = includeCharts ? collectFigures(sections) : [];
 
   const sectionHtml = sections.map((section) => {
@@ -498,7 +547,7 @@ export function renderReportHtml(payload: JsonObject, options: ReportExportOptio
   <meta charset="utf-8" />
   <title>${escapeHtml(title)}</title>
   <style>
-    body { color: #111827; font-family: Arial, sans-serif; line-height: 1.55; margin: 48px; }
+    body { color: #111827; font-family: "Times New Roman", Times, serif; font-size: 11pt; line-height: 1.55; margin: 48px; }
     h1, h2, h3 { line-height: 1.2; }
     h1 { font-size: 30px; margin-bottom: 8px; }
     h2 { border-bottom: 1px solid #e5e7eb; font-size: 20px; margin-top: 32px; padding-bottom: 6px; }
@@ -516,42 +565,29 @@ export function renderReportHtml(payload: JsonObject, options: ReportExportOptio
     .figure-table th { background: #f3f4f6; text-align: left; padding: 6px 10px; border: 1px solid #e5e7eb; }
     .figure-table td { padding: 4px 10px; border: 1px solid #e5e7eb; }
     .chart-placeholder { color: #9ca3af; font-style: italic; text-align: center; padding: 24px; }
+    strong { font-weight: 700; }
+    em { font-style: italic; }
+    code { font-family: "Courier New", monospace; font-size: 10pt; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 3px; padding: 0 3px; }
   </style>
 </head>
 <body>
   <h1>${escapeHtml(title)}</h1>
-  <p class="muted">${escapeHtml(String(payload.source_note ?? ""))}</p>
-  <h2>Report Metadata</h2>
-  <pre>${escapeHtml(JSON.stringify(metadata, null, 2))}</pre>
-  <h2>Scope And Filters</h2>
-  <pre>${escapeHtml(JSON.stringify(scope, null, 2))}</pre>
   <h2>Table Of Contents</h2>
   <ol class="toc">
     ${sections.map((section) => `<li>${escapeHtml(section.title)}</li>`).join("\n    ")}
   </ol>
   ${sectionHtml}
-  ${appendices.length > 0 ? `<h2>Appendices</h2>
-  ${appendices.map((appendix) => `<h3>${escapeHtml(appendix.title)}</h3><pre>${escapeHtml(JSON.stringify(appendix.content, null, 2))}</pre>`).join("\n")}` : ""}
-  ${shouldIncludeAuditNote(options) ? `<h2>Audit Note</h2><pre>${escapeHtml(JSON.stringify(auditNote, null, 2))}</pre>` : ""}
 </body>
 </html>`;
 }
 
 export function renderReportText(payload: JsonObject, options: ReportExportOptions = {}): string {
+  void options;
   const title = titleFromPayload(payload);
   const sections = asRecordArray(payload.sections);
-  const appendices = shouldIncludeAppendix(options) ? asRecordArray(payload.appendices) : [];
   const lines: string[] = [
     title,
     "=".repeat(title.length),
-    "",
-    String(payload.source_note ?? ""),
-    "",
-    "REPORT METADATA",
-    JSON.stringify(asRecord(payload.metadata), null, 2),
-    "",
-    "SCOPE AND FILTERS",
-    JSON.stringify(asRecord(payload.scope), null, 2),
     "",
     "TABLE OF CONTENTS",
     ...sections.map((section, index) => `${index + 1}. ${String(section.title ?? "Untitled section")}`),
@@ -587,20 +623,6 @@ export function renderReportText(payload: JsonObject, options: ReportExportOptio
     }
 
     lines.push("");
-  }
-
-  if (appendices.length > 0) {
-    lines.push("APPENDICES");
-    for (const appendix of appendices) {
-      lines.push(String(appendix.title ?? "Appendix"));
-      lines.push(JSON.stringify(appendix.content ?? {}, null, 2));
-    }
-    lines.push("");
-  }
-
-  if (shouldIncludeAuditNote(options)) {
-    lines.push("AUDIT NOTE");
-    lines.push(JSON.stringify(asRecord(payload.audit_note), null, 2));
   }
 
   return lines.join("\n");
@@ -696,24 +718,8 @@ function docxTextParagraph(text: string, heading?: (typeof HeadingLevel)[keyof t
   return new Paragraph({
     heading,
     spacing: { after: heading ? 180 : 120 },
-    children: [new TextRun({ text, size: heading ? 28 : 22 })],
+    children: [new TextRun({ text, font: "Times New Roman", size: heading ? 28 : 22 })],
   });
-}
-
-function docxJsonBlock(title: string, value: unknown): Paragraph[] {
-  return [
-    docxTextParagraph(title, HeadingLevel.HEADING_2),
-    new Paragraph({
-      spacing: { after: 180 },
-      children: [
-        new TextRun({
-          text: JSON.stringify(value ?? {}, null, 2),
-          font: "Courier New",
-          size: 18,
-        }),
-      ],
-    }),
-  ];
 }
 
 function docxMarkdown(markdown: unknown): Paragraph[] {
@@ -741,12 +747,12 @@ function docxTable(title: string, rows: JsonObject[]): (Paragraph | Table)[] {
       rows: [
         new TableRow({
           children: columns.map((column) => new TableCell({
-            children: [new Paragraph({ children: [new TextRun({ text: column, bold: true })] })],
+            children: [new Paragraph({ children: [new TextRun({ text: column, bold: true, font: "Times New Roman", size: 22 })] })],
           })),
         }),
         ...rows.slice(0, 50).map((row) => new TableRow({
           children: columns.map((column) => new TableCell({
-            children: [new Paragraph(String(row[column] ?? ""))],
+            children: [new Paragraph({ children: [new TextRun({ text: String(row[column] ?? ""), font: "Times New Roman", size: 22 })] })],
           })),
         })),
       ],
@@ -757,17 +763,13 @@ function docxTable(title: string, rows: JsonObject[]): (Paragraph | Table)[] {
 export async function renderReportDocx(payload: JsonObject, options: ReportExportOptions = {}): Promise<Uint8Array> {
   const title = titleFromPayload(payload);
   const sections = asRecordArray(payload.sections);
-  const appendices = shouldIncludeAppendix(options) ? asRecordArray(payload.appendices) : [];
   const includeCharts = shouldIncludeCharts(options);
   const allFigures = includeCharts ? collectFigures(sections) : [];
   const children: Array<Paragraph | Table | TableOfContents> = [
     docxTextParagraph(title, HeadingLevel.TITLE),
-    docxTextParagraph(String(payload.source_note ?? "")),
     new Paragraph({ children: [new PageBreak()] }),
     docxTextParagraph("Table Of Contents", HeadingLevel.HEADING_1),
     new TableOfContents("Contents", { hyperlink: true, headingStyleRange: "1-3" }),
-    ...docxJsonBlock("Report Metadata", asRecord(payload.metadata)),
-    ...docxJsonBlock("Scope And Filters", asRecord(payload.scope)),
   ];
 
   for (const section of sections) {
@@ -784,7 +786,7 @@ export async function renderReportDocx(payload: JsonObject, options: ReportExpor
         const headerColumns = columns.slice(0, 8);
         children.push(new Paragraph({
           spacing: { before: 240 },
-          children: [new TextRun({ text: `Figure ${f.figure_number}: ${f.title}`, italics: true, size: 20 })],
+          children: [new TextRun({ text: `Figure ${f.figure_number}: ${f.title}`, italics: true, font: "Times New Roman", size: 22 })],
         }));
         if (rows.length > 0 && headerColumns.length > 0) {
           children.push(...docxTable(f.title, rows.map((row) => {
@@ -797,17 +799,6 @@ export async function renderReportDocx(payload: JsonObject, options: ReportExpor
         }
       }
     }
-  }
-
-  if (appendices.length > 0) {
-    children.push(docxTextParagraph("Appendices", HeadingLevel.HEADING_1));
-    for (const appendix of appendices) {
-      children.push(...docxJsonBlock(String(appendix.title ?? "Appendix"), appendix.content));
-    }
-  }
-
-  if (shouldIncludeAuditNote(options)) {
-    children.push(...docxJsonBlock("Audit Note", asRecord(payload.audit_note)));
   }
 
   const document = new Document({
@@ -839,7 +830,7 @@ export async function renderReportPdf(payload: JsonObject, options: ReportExport
       printBackground: true,
       displayHeaderFooter: true,
       margin: { top: "22mm", right: "18mm", bottom: "22mm", left: "18mm" },
-      footerTemplate: `<div style="font-family: Arial, sans-serif; font-size: 8px; color: #6b7280; width: 100%; padding: 0 18mm; text-align: right;"><span class="pageNumber"></span> / <span class="totalPages"></span></div>`,
+      footerTemplate: `<div style="font-family: 'Times New Roman', Times, serif; font-size: 8px; color: #6b7280; width: 100%; padding: 0 18mm; text-align: right;"><span class="pageNumber"></span> / <span class="totalPages"></span></div>`,
       headerTemplate: `<div></div>`,
     });
     return new Uint8Array(pdf);

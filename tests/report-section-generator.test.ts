@@ -62,6 +62,8 @@ test("system prompt forbids invented figures and requires JSON output", () => {
 
   assert.match(prompt, /Do not invent figures/);
   assert.match(prompt, /Use exact figures only/);
+  assert.match(prompt, /Focus on the insight/);
+  assert.match(prompt, /Do not explain worksheet setup, aggregation functions, query mechanics/);
   assert.match(prompt, /Respond with ONLY a JSON object/);
 });
 

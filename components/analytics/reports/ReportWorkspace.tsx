@@ -526,9 +526,9 @@ function GeneratedReportViewer({
   }
 
   return (
-    <div className="flex gap-0 rounded-lg border bg-white overflow-hidden" style={{ height: "calc(100vh - 340px)", minHeight: "500px" }}>
+    <div className="flex gap-0 rounded-lg border bg-white overflow-hidden" style={{ height: "calc(100vh - 250px)", minHeight: "680px" }}>
       <aside className="w-56 border-r bg-slate-50 p-3 overflow-y-auto flex-shrink-0">
-        <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Contents</h4>
+        <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Navigate</h4>
         <nav className="space-y-0.5">
           {(sections ?? []).map((section, index) => (
             <button
@@ -549,7 +549,7 @@ function GeneratedReportViewer({
       </aside>
       <iframe
         ref={iframeRef}
-        className="flex-1 w-full border-0"
+        className="h-full flex-1 w-full border-0"
         title="Report preview"
         sandbox="allow-scripts allow-same-origin"
       />
