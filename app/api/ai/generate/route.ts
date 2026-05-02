@@ -4,7 +4,7 @@ import type { NextRequest } from "next/server";
 import type { DatasetField } from "@/types";
 import Anthropic from "@anthropic-ai/sdk";
 import { buildSystemPrompt, type AIDatasetField } from "@/lib/ai/prompts";
-import { sanitiseConfig } from "@/lib/ai/validate";
+import { sanitiseGeneratedSheets } from "@/lib/ai/validate";
 
 async function enrichFieldsForAI(
   datasetId: string,
@@ -113,7 +113,7 @@ export async function POST(request: NextRequest) {
 
     const message = await client.messages.create({
       model:      "claude-haiku-4-5-20251001",
-      max_tokens: 900,
+      max_tokens: 2200,
       system:     buildSystemPrompt(aiFields),
       messages:   conversationMessages,
     });
@@ -146,21 +146,41 @@ export async function POST(request: NextRequest) {
     }
 
     // ── Sanitise + validate ─────────────────────────────────────────────────
-    const config = sanitiseConfig(parsed, aiFields, { prompt });
+    const sheets = sanitiseGeneratedSheets(parsed, aiFields, { prompt });
+    const primary = sheets[0];
+    const config = primary.config;
+    const fieldCoverage = new Map(
+      aiFields
+        .filter((field) => typeof field.distinctCount === "number")
+        .map((field) => [field.name, field.distinctCount as number])
+    );
+    const dataCoverage = sheets.flatMap((sheet) =>
+      sheet.config.dimensions
+        .map((dimension) => ({
+          sheetTitle: sheet.title,
+          field: dimension.field,
+          distinctCount: fieldCoverage.get(dimension.field),
+        }))
+        .filter((item): item is { sheetTitle: string; field: string; distinctCount: number } =>
+          typeof item.distinctCount === "number"
+        )
+    );
 
     // ── Update audit log with successful result ─────────────────────────────
     if (logId) {
       await supabase
         .from("ai_logs")
-        .update({ config })
+        .update({ config: { ...config, sheets } })
         .eq("id", logId);
     }
 
     return NextResponse.json({
-      title:       String(parsed.title       ?? "AI Chart"),
-      description: String(parsed.description ?? ""),
-      insight:     String(parsed.insight     ?? ""),
+      title:       String(parsed.title       ?? primary.title ?? "AI Workbook"),
+      description: String(parsed.description ?? primary.description ?? ""),
+      insight:     String(parsed.insight     ?? primary.insight ?? ""),
       config,
+      sheets,
+      dataCoverage,
       logId,
     });
 

@@ -2,7 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-// GET /api/worksheets — list the current user's worksheets
+// GET /api/worksheets — list the current user's workbook rows
 export async function GET() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -31,7 +31,7 @@ export async function GET() {
   return NextResponse.json(worksheets);
 }
 
-// POST /api/worksheets — create a new worksheet
+// POST /api/worksheets — create a new workbook row
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();

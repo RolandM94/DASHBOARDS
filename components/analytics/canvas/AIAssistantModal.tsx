@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import type { Dataset, Worksheet, WorksheetConfig, ChartType, WidgetBlockConfig } from "@/types";
+import type { Dataset, Worksheet, WorksheetConfig, ChartType, WidgetBlockConfig, WorkbookConfig, WorkbookSheet } from "@/types";
 import { useWorksheetStore } from "@/store/worksheetStore";
 import { useCanvasStore } from "@/store/canvasStore";
 import { generateId } from "@/lib/utils/ids";
+import { getWorkbookSheet, normalizeWorkbookConfig } from "@/lib/workbook";
 import { Button } from "@/components/ui/button";
 import {
   Sparkles, X, Loader2, ChevronDown, Check,
@@ -210,7 +211,16 @@ type ConversationMessage = { role: "user" | "assistant"; content: string };
 type ModalState =
   | { phase: "input" }
   | { phase: "loading" }
-  | { phase: "result"; title: string; description: string; insight: string; config: WorksheetConfig; datasetId: string }
+  | {
+      phase: "result";
+      title: string;
+      description: string;
+      insight: string;
+      config: WorksheetConfig;
+      sheets: Array<{ title: string; description: string; insight: string; config: WorksheetConfig }>;
+      dataCoverage: Array<{ sheetTitle: string; field: string; distinctCount: number }>;
+      datasetId: string;
+    }
   | { phase: "adding" }
   | { phase: "error"; message: string };
 
@@ -241,8 +251,16 @@ export function AIAssistantModal({ canvasId, onClose }: Props) {
 
   const targetWidget    = widgetBlocks.find((b) => b.id === targetWidgetId);
   const targetWorksheet = targetWidget ? worksheets.find((w) => w.id === targetWidget.worksheetId) : undefined;
+  const targetSheet = targetWorksheet ? getWorkbookSheet(targetWorksheet, targetWidget?.sheetId) : undefined;
+  const targetSheetId = targetWidget?.sheetId ?? targetSheet?.id;
   const linkedInsightBlock = targetWorksheet
-    ? canvas?.blocks.find((b) => b.type === "text" && b.worksheetId === targetWorksheet.id)
+    ? canvas?.blocks.find((b) =>
+        b.type === "text" &&
+        b.worksheetId === targetWorksheet.id &&
+        ((b as { sheetId?: string }).sheetId
+          ? (b as { sheetId?: string }).sheetId === targetSheetId
+          : !targetWidget?.sheetId)
+      )
     : undefined;
 
   useEffect(() => {
@@ -264,21 +282,21 @@ export function AIAssistantModal({ canvasId, onClose }: Props) {
 
     // In modify mode with no prior messages yet, prime conversation with current config
     let effectivePriorMessages = priorMessages;
-    if (mode === "modify" && targetWorksheet && priorMessages.length === 0) {
+    if (mode === "modify" && targetWorksheet && targetSheet && priorMessages.length === 0) {
       effectivePriorMessages = [
         {
           role: "user",
           content: "Here is the current chart configuration to modify. Preserve the current intent unless I explicitly ask to change it.",
         },
         { role: "assistant", content: JSON.stringify({
-          title:      targetWidget?.title ?? targetWorksheet.name,
-          description: targetWorksheet.description ?? "",
-          chartType:  targetWorksheet.config.chartType,
-          dimensions: targetWorksheet.config.dimensions,
-          metrics:    targetWorksheet.config.metrics,
-          filters:    targetWorksheet.config.filters,
-          sort:       targetWorksheet.config.sort ?? "natural",
-          logScale:   targetWorksheet.config.logScale ?? false,
+          title:       targetWidget?.title ?? targetSheet.name,
+          description: targetSheet.description ?? targetWorksheet.description ?? "",
+          chartType:   targetSheet.chartType,
+          dimensions:  targetSheet.dimensions,
+          metrics:     targetSheet.metrics,
+          filters:     targetSheet.filters,
+          sort:        targetSheet.sort ?? "natural",
+          logScale:    targetSheet.logScale ?? false,
         }) },
       ];
     }
@@ -310,6 +328,7 @@ export function AIAssistantModal({ canvasId, onClose }: Props) {
           title:       json.title,
           description: json.description,
           insight:     json.insight,
+          sheets:      json.sheets,
           chartType:   json.config.chartType,
           dimensions:  json.config.dimensions,
           metrics:     json.config.metrics,
@@ -336,6 +355,10 @@ export function AIAssistantModal({ canvasId, onClose }: Props) {
         description: json.description,
         insight:     json.insight ?? "",
         config:      json.config,
+        sheets:      Array.isArray(json.sheets) && json.sheets.length > 0
+          ? json.sheets
+          : [{ title: json.title, description: json.description, insight: json.insight ?? "", config: json.config }],
+        dataCoverage: Array.isArray(json.dataCoverage) ? json.dataCoverage : [],
         datasetId:   activeDatasetId,   // fix: was selectedDataset (wrong in modify mode)
       });
     } catch (err) {
@@ -362,73 +385,132 @@ export function AIAssistantModal({ canvasId, onClose }: Props) {
 
     try {
       // ── Modify mode: PATCH the existing worksheet ─────────────────
-      if (mode === "modify" && targetWorksheet) {
-        const patchRes = await fetch(`/api/worksheets/${targetWorksheet.id}`, {
+      if (mode === "modify" && targetWorksheet && targetSheet) {
+        const workbook = normalizeWorkbookConfig(targetWorksheet.config, {
+          name: targetWorksheet.name,
+          description: targetWorksheet.description,
+        });
+        const selectedSheetId = targetWidget?.sheetId ?? targetSheet.id;
+        const nextConfig: WorkbookConfig = {
+          ...workbook,
+          activeSheetId: selectedSheetId,
+          sheets: workbook.sheets.map((sheet) =>
+            sheet.id === selectedSheetId
+              ? {
+                  ...sheet,
+                  ...state.config,
+                  id: sheet.id,
+                  name: state.title,
+                  description: state.description || undefined,
+                }
+              : sheet
+          ),
+        };
+        const patchRes = await fetch(`/api/workbooks/${targetWorksheet.id}`, {
           method:  "PATCH",
           headers: { "Content-Type": "application/json" },
           body:    JSON.stringify({
-            name:        state.title,
-            description: state.description || undefined,
-            config:      state.config,
+            name:        targetWorksheet.name,
+            description: targetWorksheet.description || undefined,
+            config:      nextConfig,
           }),
         });
         if (!patchRes.ok) {
           const e = await patchRes.json();
-          setState({ phase: "error", message: e.error ?? "Failed to update worksheet" });
+          setState({ phase: "error", message: e.error ?? "Failed to update sheet" });
           return;
         }
         const updated: Worksheet = await patchRes.json();
         updateWorksheet(updated.id, updated);
         if (targetWidget) {
-          updateBlock(canvasId, targetWidget.id, { title: state.title });
+          updateBlock(canvasId, targetWidget.id, { title: state.title, sheetId: selectedSheetId });
         }
         if (linkedInsightBlock && state.insight) {
           updateBlock(canvasId, linkedInsightBlock.id, { content: state.insight });
+        } else if (includeInsight && state.insight) {
+          addBlock(canvasId, {
+            id:          generateId(),
+            type:        "text",
+            order:       canvas?.blocks.length ?? 0,
+            content:     state.insight,
+            worksheetId: targetWorksheet.id,
+            sheetId:     selectedSheetId,
+          });
         }
         onClose();
         return;
       }
 
-      // ── Create mode: persist a new worksheet ──────────────────────
-      // 1. Persist the worksheet via API
-      const wsRes = await fetch("/api/worksheets", {
+      // ── Create mode: persist a new workbook ──────────────────────
+      // 1. Persist the workbook via the v1 worksheets API
+      const generatedSheets = state.sheets.map((generated, index) => ({
+        ...generated,
+        title: generated.title || `Sheet ${index + 1}`,
+      }));
+      const sheets: WorkbookSheet[] = generatedSheets.map((generated) => ({
+        ...generated.config,
+        id: generateId(),
+        name: generated.title,
+        description: generated.description || undefined,
+      }));
+      const workbookConfig: WorkbookConfig = {
+        version: 1,
+        activeSheetId: sheets[0].id,
+        sheets,
+      };
+
+      const wsRes = await fetch("/api/workbooks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           datasetId:   state.datasetId,
           name:        state.title,
           description: state.description || undefined,
-          config:      state.config,
+          config:      workbookConfig,
           status:      "saved",
         }),
       });
 
       if (!wsRes.ok) {
         const e = await wsRes.json();
-        setState({ phase: "error", message: e.error ?? "Failed to save worksheet" });
+        setState({ phase: "error", message: e.error ?? "Failed to save workbook" });
         return;
       }
 
       const worksheet: Worksheet = await wsRes.json();
       addWorksheet(worksheet);
 
-      // 2. Add widget block to canvas
-      addBlock(canvasId, {
-        id:          generateId(),
-        type:        "widget",
-        order:       0,
-        worksheetId: worksheet.id,
-        title:       state.title,
-      });
-
-      // 3. Optionally add insight as a text block immediately after the widget
-      if (includeInsight && state.insight) {
+      // 2. Add widget blocks to canvas — one per generated workbook sheet
+      sheets.forEach((sheet, index) => {
         addBlock(canvasId, {
           id:          generateId(),
-          type:        "text",
-          order:       1,
-          content:     state.insight,
-          worksheetId: worksheet.id,   // link for AI refresh badge
+          type:        "widget",
+          order:       index,
+          worksheetId: worksheet.id,
+          sheetId:     sheet.id,
+          title:       sheet.name,
+        });
+      });
+
+      // 3. Optionally add insight text blocks immediately after the widgets
+      const insightBlocks = generatedSheets
+        .map((generated, index) => ({
+          insight: generated.insight || (generatedSheets.length === 1 ? state.insight : ""),
+          sheetId: sheets[index].id,
+          order: sheets.length + index,
+        }))
+        .filter((generated) => generated.insight);
+
+      if (includeInsight && insightBlocks.length > 0) {
+        insightBlocks.forEach((generated) => {
+          addBlock(canvasId, {
+            id:          generateId(),
+            type:        "text",
+            order:       generated.order,
+            content:     generated.insight,
+            worksheetId: worksheet.id,   // link for AI refresh badge
+            sheetId:     generated.sheetId,
+          });
         });
       }
 
@@ -545,6 +627,7 @@ export function AIAssistantModal({ canvasId, onClose }: Props) {
               <div className="space-y-1.5 max-h-36 overflow-y-auto">
                 {widgetBlocks.map((wb) => {
                   const ws = worksheets.find((w) => w.id === wb.worksheetId);
+                  const sheet = ws ? getWorkbookSheet(ws, wb.sheetId) : null;
                   return (
                     <button
                       key={wb.id}
@@ -557,11 +640,11 @@ export function AIAssistantModal({ canvasId, onClose }: Props) {
                       }`}
                     >
                       <div className="flex-1 min-w-0">
-                        <p className="font-medium truncate">{wb.title ?? ws?.name ?? "Widget"}</p>
-                        {ws ? (
-                          <p className="text-[11px] text-muted-foreground">{ws.config.chartType} · {ws.config.metrics.length} metric{ws.config.metrics.length !== 1 ? "s" : ""}</p>
+                        <p className="font-medium truncate">{wb.title ?? sheet?.name ?? ws?.name ?? "Widget"}</p>
+                        {sheet ? (
+                          <p className="text-[11px] text-muted-foreground">{sheet.chartType} · {sheet.metrics.length} metric{sheet.metrics.length !== 1 ? "s" : ""}</p>
                         ) : (
-                          <p className="text-[11px] text-red-400">Worksheet not found</p>
+                          <p className="text-[11px] text-red-400">Workbook not found</p>
                         )}
                       </div>
                       {targetWidgetId === wb.id && <Check className="h-3.5 w-3.5 text-brand shrink-0" />}
@@ -639,6 +722,26 @@ export function AIAssistantModal({ canvasId, onClose }: Props) {
                 description={state.description}
                 config={state.config}
               />
+              {state.sheets.length > 1 && (
+                <div className="rounded-xl border border-brand/20 bg-brand/5 px-3 py-2">
+                  <p className="text-xs font-medium text-brand-deep">
+                    {state.sheets.length} workbook sheets will be created.
+                  </p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-2">
+                    {state.sheets.map((sheet) => sheet.title).join(", ")}
+                  </p>
+                </div>
+              )}
+              {state.dataCoverage.length > 0 && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  <p className="font-semibold">Dataset coverage check</p>
+                  {state.dataCoverage.map((item) => (
+                    <p key={`${item.sheetTitle}-${item.field}`}>
+                      {item.sheetTitle}: {item.field} has {item.distinctCount.toLocaleString()} distinct value{item.distinctCount !== 1 ? "s" : ""} in this dataset.
+                    </p>
+                  ))}
+                </div>
+              )}
               <InsightPreview
                 insight={state.insight}
                 include={includeInsight}

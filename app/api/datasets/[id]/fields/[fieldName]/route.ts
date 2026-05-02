@@ -1,8 +1,9 @@
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import type { FieldType, DatasetField } from "@/types";
+import type { FieldType, DatasetField, Worksheet } from "@/types";
 import { isNumericType } from "@/types";
+import { normalizeWorkbookConfig } from "@/lib/workbook";
 
 const VALID_TYPES: Array<FieldType | "default"> = [
   "integer", "decimal", "string", "date", "datetime", "default",
@@ -110,26 +111,68 @@ export async function PATCH(
     return NextResponse.json({ error: updateError.message }, { status: 500 });
   }
 
-  // Detect worksheets that reference this field in a way that may break:
-  // metrics using a field that's now non-numeric
+  // Sync workbook metric metadata so open builders/canvases do not keep stale
+  // metric.fieldType values after the dataset field type changes.
+  const serviceClient = await createServiceClient();
+  const updatedWorksheets: Worksheet[] = [];
   const affectedWorksheets: string[] = [];
-  if (!isNumericType(resolvedType)) {
-    const { data: worksheets } = await supabase
-      .from("worksheets")
-      .select("id, name, config")
-      .eq("dataset_id", id);
 
-    if (worksheets) {
-      for (const ws of worksheets) {
-        const config = ws.config as { metrics?: Array<{ field: string }> } | null;
-        const usedAsMetric = config?.metrics?.some((m) => m.field === fieldName);
-        if (usedAsMetric) affectedWorksheets.push(ws.name as string);
+  const { data: worksheets } = await serviceClient
+    .from("worksheets")
+    .select("id, dataset_id, name, description, config, status, created_at, updated_at")
+    .eq("dataset_id", id);
+
+  if (worksheets) {
+    for (const ws of worksheets) {
+      const workbook = normalizeWorkbookConfig(ws.config as Worksheet["config"], {
+        name: ws.name as string,
+        description: (ws.description as string | null) ?? undefined,
+      });
+
+      let changed = false;
+      const nextConfig = {
+        ...workbook,
+        sheets: workbook.sheets.map((sheet) => ({
+          ...sheet,
+          metrics: sheet.metrics.map((metric) => {
+            if (metric.field !== fieldName) return metric;
+            changed = true;
+            return { ...metric, fieldType: resolvedType };
+          }),
+        })),
+      };
+
+      if (!changed) continue;
+
+      if (!isNumericType(resolvedType)) {
+        affectedWorksheets.push(ws.name as string);
+      }
+
+      const { data: updated } = await serviceClient
+        .from("worksheets")
+        .update({ config: nextConfig })
+        .eq("id", ws.id)
+        .select("id, dataset_id, name, description, config, status, created_at, updated_at")
+        .single();
+
+      if (updated) {
+        updatedWorksheets.push({
+          id: updated.id,
+          datasetId: updated.dataset_id,
+          name: updated.name,
+          description: updated.description ?? undefined,
+          config: updated.config as Worksheet["config"],
+          status: updated.status,
+          createdAt: updated.created_at,
+          updatedAt: updated.updated_at,
+        });
       }
     }
   }
 
   return NextResponse.json({
     fields: updatedFields,
+    updatedWorksheets,
     ...(affectedWorksheets.length > 0 && { affectedWorksheets }),
   });
 }

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   BarChart2, Building2, LayoutDashboard, LogOut, Plus,
-  Loader2, AlertCircle,
+  Loader2, AlertCircle, FileText,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { DataLoader } from "@/components/providers/DataLoader";
@@ -188,7 +188,7 @@ export default function AnalyticsLayout({ children }: { children: React.ReactNod
         setGuardState("ready");
       }
     });
-  }, []);
+  }, [router]);
 
   async function handleSignOut() {
     const supabase = createClient();
@@ -237,13 +237,17 @@ export default function AnalyticsLayout({ children }: { children: React.ReactNod
               <BarChart2 className="h-4 w-4" />
               Analytics
             </NavLink>
-            <NavLink href="/analytics/worksheet/new">
+            <NavLink href="/analytics/workbook/new">
               <Plus className="h-4 w-4" />
-              New Worksheet
+              New Workbook
             </NavLink>
             <NavLink href="/analytics/canvas/new">
               <LayoutDashboard className="h-4 w-4" />
               New Canvas
+            </NavLink>
+            <NavLink href="/analytics/reports">
+              <FileText className="h-4 w-4" />
+              Reports
             </NavLink>
 
             {/* Owners only — members don't manage org settings */}

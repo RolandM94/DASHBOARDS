@@ -136,6 +136,20 @@ export interface WorksheetConfig {
   sort?: SortOrder;
 }
 
+export interface WorkbookSheet extends WorksheetConfig {
+  id: string;
+  name: string;
+  description?: string;
+}
+
+export interface WorkbookConfig {
+  version: 1;
+  activeSheetId: string;
+  sheets: WorkbookSheet[];
+}
+
+export type WorkbookOrWorksheetConfig = WorksheetConfig | WorkbookConfig;
+
 // ─── Saved Worksheet ─────────────────────────────────────────────
 
 export type WorksheetStatus = "draft" | "saved";
@@ -145,7 +159,7 @@ export interface Worksheet {
   name: string;
   description?: string;
   datasetId: string;
-  config: WorksheetConfig;
+  config: WorkbookOrWorksheetConfig;
   createdAt: string;
   updatedAt: string;
   status: WorksheetStatus;
@@ -164,6 +178,7 @@ export interface BaseBlock {
 export interface WidgetBlockConfig extends BaseBlock {
   type: "widget";
   worksheetId: string;
+  sheetId?: string;
   title?: string;
 }
 
@@ -172,6 +187,8 @@ export interface TextBlockConfig extends BaseBlock {
   content: string;
   /** When set, this text block is an AI insight linked to a worksheet and can be refreshed. */
   worksheetId?: string;
+  /** Optional sheet inside the linked workbook. */
+  sheetId?: string;
 }
 
 export interface DatasetPreviewBlockConfig extends BaseBlock {
@@ -244,6 +261,9 @@ export interface DateRangeValue {
 
 export type GlobalFilterValue = string | string[] | NumericRangeValue | DateRangeValue;
 export type ActiveGlobalFilters = Record<string, GlobalFilterValue>;
+
+/** Active smart analytical filters — list of smart filter IDs. */
+export type ActiveSmartFilters = string[];
 
 // ─── Chart rendering ─────────────────────────────────────────────
 
@@ -320,7 +340,248 @@ export interface AIGenerateResponse {
   /** 2–3 sentence analytical insight about what the chart reveals. */
   insight:     string;
   config:      WorksheetConfig;
+  /** One or more chart sheets generated for a workbook. Single-chart responses return one sheet. */
+  sheets?: Array<{
+    title: string;
+    description: string;
+    insight: string;
+    config: WorksheetConfig;
+  }>;
+  dataCoverage?: Array<{
+    sheetTitle: string;
+    field: string;
+    distinctCount: number;
+  }>;
   /** ID of the ai_logs row created for this request. */
   logId?:      string;
 }
 
+// ─── AI Report Generation Engine ─────────────────────────────────
+
+export type ReportSourceType = "dashboard" | "canvas";
+export type ReportType = "executive_summary" | "management_report" | "technical_report" | "custom_report";
+
+export type ReportProjectStatus =
+  | "draft"
+  | "blueprint_generated"
+  | "blueprint_approved"
+  | "generating"
+  | "generated"
+  | "exported"
+  | "review"
+  | "approved"
+  | "archived"
+  | "failed";
+
+export interface ReportProject {
+  id: string;
+  name: string;
+  description?: string;
+  sourceType: ReportSourceType;
+  sourceDashboardId?: string;
+  sourceCanvasId?: string;
+  reportType: ReportType;
+  status: ReportProjectStatus;
+  workflowEnabled: boolean;
+  reviewRequestedBy?: string;
+  reviewRequestedAt?: string;
+  approvedBy?: string;
+  approvedAt?: string;
+  lockedBy?: string;
+  lockedAt?: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ReportSourceSnapshot {
+  id: string;
+  reportProjectId: string;
+  sourceType: ReportSourceType;
+  sourceId: string;
+  activeFiltersSnapshot: unknown;
+  widgetsSnapshot: unknown;
+  worksheetsSnapshot: unknown;
+  insightsSnapshot: unknown;
+  queryOutputsSnapshot: unknown;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+}
+
+export type ReportBlueprintStatus = "draft" | "edited" | "approved" | "locked" | "superseded";
+
+export interface ReportBlueprint {
+  id: string;
+  reportProjectId: string;
+  version: number;
+  status: ReportBlueprintStatus;
+  title: string;
+  objective?: string;
+  audience?: string;
+  blueprintJson: Record<string, unknown>;
+  generatedByAi: boolean;
+  approvedBy?: string;
+  approvedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type ReportSectionType =
+  | "executive_summary"
+  | "introduction"
+  | "methodology"
+  | "chart_analysis"
+  | "table_analysis"
+  | "kpi_summary"
+  | "risk_analysis"
+  | "recommendation"
+  | "appendix"
+  | "custom";
+
+export type ReportSectionStatus = "pending" | "generating" | "generated" | "edited" | "approved" | "failed";
+
+export interface ReportSection {
+  id: string;
+  reportProjectId: string;
+  reportBlueprintId?: string;
+  parentSectionId?: string;
+  sectionKey: string;
+  title: string;
+  sectionType: ReportSectionType;
+  orderIndex: number;
+  sourceWidgetIds: string[];
+  sourceWorksheetIds: string[];
+  sourceInsightIds: string[];
+  sectionPrompt?: string;
+  sectionConfig: Record<string, unknown>;
+  status: ReportSectionStatus;
+  generatedContent?: string;
+  editedContent?: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type ReportExportFormat = "docx" | "pdf" | "excel" | "html";
+export type ReportExportStatus = "pending" | "exporting" | "exported" | "failed";
+
+export interface ReportExport {
+  id: string;
+  reportProjectId: string;
+  reportBlueprintId?: string;
+  format: ReportExportFormat;
+  fileUrl?: string;
+  filePath?: string;
+  exportConfig: Record<string, unknown>;
+  status: ReportExportStatus;
+  exportedBy?: string;
+  exportedAt?: string;
+  createdAt: string;
+}
+
+export type ReportCompilationStatus = "compiled" | "superseded";
+
+export interface ReportCompilation {
+  id: string;
+  reportProjectId: string;
+  reportBlueprintId?: string;
+  sourceSnapshotId?: string;
+  title: string;
+  compiledPayload: Record<string, unknown>;
+  status: ReportCompilationStatus;
+  compiledBy?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type ReportJobStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
+export type ReportJobType =
+  | "capture_source_snapshot"
+  | "generate_blueprint"
+  | "generate_section"
+  | "generate_all_sections"
+  | "compile_report"
+  | "export_report";
+
+export interface ReportJob {
+  id: string;
+  reportProjectId: string;
+  jobType: ReportJobType;
+  status: ReportJobStatus;
+  progressPercent: number;
+  currentStep: string;
+  totalSteps: number;
+  completedSteps: number;
+  errorMessage?: string;
+  startedAt?: string;
+  finishedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ── Templates ────────────────────────────────────────────────────────────────
+
+export interface TemplateLayoutSlot {
+  type: "ai_narrative" | "chart" | "text_block";
+  width: number;
+  widget_selector?: {
+    match_type: "by_id" | "by_type" | "by_worksheet" | "any";
+    value?: string;
+  };
+  default_content?: string;
+}
+
+export interface TemplateLayoutSection {
+  section_key: string;
+  title: string;
+  section_type: string;
+  layout: {
+    rows: Array<{
+      columns: TemplateLayoutSlot[];
+    }>;
+  };
+}
+
+export interface ReportTemplate {
+  id: string;
+  name: string;
+  description?: string;
+  layoutJson: {
+    sections: TemplateLayoutSection[];
+  };
+  referenceDocumentIds: string[];
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type ReferenceDocumentFileType = "pdf" | "docx" | "txt" | "md";
+
+export interface ReferenceDocument {
+  id: string;
+  templateId?: string;
+  reportProjectId?: string;
+  filename: string;
+  fileUrl: string;
+  fileType: ReferenceDocumentFileType;
+  extractedText?: string;
+  pageCount: number;
+  metadata: Record<string, unknown>;
+  createdBy: string;
+  createdAt: string;
+}
+
+export type ReportGenerationLogStatus = "pending" | "success" | "failed";
+
+export interface ReportGenerationLog {
+  id: string;
+  reportProjectId?: string;
+  userId: string;
+  actionType: string;
+  inputPayload: Record<string, unknown>;
+  outputSummary: Record<string, unknown>;
+  aiModel?: string;
+  status: ReportGenerationLogStatus;
+  errorMessage?: string;
+  createdAt: string;
+}

@@ -49,6 +49,7 @@ export async function GET(
     id: w.id,
     datasetId: w.dataset_id,
     name: w.name,
+    description: w.description ?? undefined,
     config: w.config,
     status: w.status,
     createdAt: w.created_at,

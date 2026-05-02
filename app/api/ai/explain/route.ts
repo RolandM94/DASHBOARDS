@@ -2,13 +2,15 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { buildExplainPrompt } from "@/lib/ai/prompts";
-import type { Metric, WorksheetConfig, DatasetField } from "@/types";
+import { normalizeWorkbookConfig } from "@/lib/workbook";
+import { resolveSmartFilter } from "@/lib/data/smart-filters";
+import type { Metric, DatasetField, Filter } from "@/types";
 
 /**
  * POST /api/ai/explain
  *
  * Generates a plain-language explanation of a rendered chart by:
- *   1. Loading the worksheet config
+ *   1. Loading the workbook sheet config
  *   2. Running aggregate_dataset to get the actual chart rows
  *   3. Sending those rows + config to Claude
  *   4. Returning the explanation text
@@ -31,9 +33,11 @@ export async function POST(request: Request) {
   }
 
   // ── Input ─────────────────────────────────────────────────────────────────
-  const { worksheetId, canvasId } = await request.json() as {
+  const { worksheetId, sheetId, canvasId, instructions } = await request.json() as {
     worksheetId: string;
+    sheetId?:    string;
     canvasId?:   string;
+    instructions?: string;
   };
 
   if (!worksheetId) {
@@ -48,10 +52,15 @@ export async function POST(request: Request) {
     .single();
 
   if (!ws) {
-    return NextResponse.json({ error: "Worksheet not found or access denied" }, { status: 404 });
+    return NextResponse.json({ error: "Workbook not found or access denied" }, { status: 404 });
   }
 
-  const config = ws.config as WorksheetConfig;
+  const workbook = normalizeWorkbookConfig(ws.config, { name: ws.name });
+  const config = workbook.sheets.find((sheet) => sheet.id === sheetId) ?? workbook.sheets[0];
+
+  if (!config) {
+    return NextResponse.json({ error: "Sheet not found" }, { status: 404 });
+  }
 
   // ── Verify dataset access (RLS) ───────────────────────────────────────────
   const { data: ds } = await supabase
@@ -76,12 +85,27 @@ export async function POST(request: Request) {
     fieldType: m.fieldType ?? fieldTypeMap[m.field],
   }));
 
+  const smartFilterIds: string[] = [];
+  const regularWorksheetFilters: Filter[] = [];
+  for (const filter of config.filters ?? []) {
+    if (filter.field === "_smart" && typeof filter.value === "string") {
+      smartFilterIds.push(filter.value);
+    } else {
+      regularWorksheetFilters.push(filter);
+    }
+  }
+
+  const smartConditions = smartFilterIds
+    .map((id) => resolveSmartFilter(id, ds.fields as DatasetField[]))
+    .filter((condition): condition is string => Boolean(condition));
+
   const { data: aggData, error: aggError } = await serviceClient.rpc("aggregate_dataset", {
     p_dataset_id:         ws.dataset_id,
     p_dimensions:         config.dimensions,
     p_metrics:            enrichedMetrics,
-    p_worksheet_filters:  config.filters ?? [],
+    p_worksheet_filters:  regularWorksheetFilters,
     p_global_filters:     {},
+    p_smart_filter_conditions: smartConditions,
     p_sort:               config.sort ?? "natural",
   });
 
@@ -99,7 +123,9 @@ export async function POST(request: Request) {
       dataset_id:   ws.dataset_id,
       canvas_id:    canvasId ?? null,
       worksheet_id: worksheetId,
-      prompt:       `Explain chart: "${ws.name}"`,
+      prompt:       instructions?.trim()
+        ? `Explain chart: "${config.name}"\n\nWriting instructions: ${instructions.trim()}`
+        : `Explain chart: "${config.name}"`,
     })
     .select("id")
     .single();
@@ -116,11 +142,12 @@ export async function POST(request: Request) {
       messages: [{
         role:    "user",
         content: buildExplainPrompt(
-          ws.name,
+          config.name,
           config.chartType,
           config.dimensions,
           config.metrics,
           rows,
+          instructions,
         ),
       }],
     });

@@ -9,6 +9,7 @@ import { BarChart2, Trash2, BarChart, LineChart, PieChart, Table2, TrendingUp, H
 import Link from "next/link";
 import { useWorksheetStore } from "@/store/worksheetStore";
 import { toast } from "@/lib/toast";
+import { getActiveWorkbookSheet, getWorkbookSheets } from "@/lib/workbook";
 
 const CHART_META: Record<string, { label: string; color: string; Icon: React.ElementType }> = {
   bar:         { label: "Bar",         color: "#4ECDC4", Icon: BarChart },
@@ -32,7 +33,9 @@ function timeAgo(dateStr: string): string {
 
 export function WorksheetCard({ worksheet }: { worksheet: Worksheet }) {
   const deleteWorksheet = useWorksheetStore((s) => s.deleteWorksheet);
-  const meta = CHART_META[worksheet.config.chartType] ?? { label: worksheet.config.chartType, color: "#94a3b8", Icon: BarChart2 };
+  const sheet = getActiveWorkbookSheet(worksheet);
+  const sheets = getWorkbookSheets(worksheet);
+  const meta = CHART_META[sheet.chartType] ?? { label: sheet.chartType, color: "#94a3b8", Icon: BarChart2 };
   const { Icon } = meta;
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -40,12 +43,12 @@ export function WorksheetCard({ worksheet }: { worksheet: Worksheet }) {
   async function handleDelete() {
     setDeleting(true);
     try {
-      const res = await fetch(`/api/worksheets/${worksheet.id}`, { method: "DELETE" });
+      const res = await fetch(`/api/workbooks/${worksheet.id}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Delete failed");
       deleteWorksheet(worksheet.id);
-      toast.success("Worksheet deleted");
+      toast.success("Workbook deleted");
     } catch {
-      toast.error("Failed to delete worksheet");
+      toast.error("Failed to delete workbook");
     } finally {
       setDeleting(false);
       setConfirmOpen(false);
@@ -57,11 +60,11 @@ export function WorksheetCard({ worksheet }: { worksheet: Worksheet }) {
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete worksheet?</DialogTitle>
+            <DialogTitle>Delete workbook?</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
             <strong className="text-foreground">{worksheet.name}</strong> will be permanently deleted.
-            Any canvas widgets using it will stop displaying data.
+            Any canvas widgets using its sheets will stop displaying data.
           </p>
           <DialogFooter>
             <Button variant="outline" size="sm" onClick={() => setConfirmOpen(false)}>Cancel</Button>
@@ -73,7 +76,7 @@ export function WorksheetCard({ worksheet }: { worksheet: Worksheet }) {
         </DialogContent>
       </Dialog>
 
-      <Link href={`/analytics/worksheet/${worksheet.id}`} className="block group">
+      <Link href={`/analytics/workbook/${worksheet.id}`} className="block group">
         <div
           className="relative rounded-xl border bg-white overflow-hidden transition-all duration-200 hover:shadow-md hover:-translate-y-0.5"
           style={{ boxShadow: "0px 0px 1px 0px rgba(0,0,0,.15), 0px 1px 4px 0px rgba(0,0,0,.04)" }}
@@ -93,7 +96,7 @@ export function WorksheetCard({ worksheet }: { worksheet: Worksheet }) {
               <button
                 onClick={(e) => { e.preventDefault(); e.stopPropagation(); setConfirmOpen(true); }}
                 className="h-6 w-6 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all"
-                title="Delete worksheet"
+                title="Delete workbook"
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </button>
@@ -118,9 +121,14 @@ export function WorksheetCard({ worksheet }: { worksheet: Worksheet }) {
               >
                 {meta.label}
               </Badge>
-              {worksheet.config.metrics.length > 0 && (
+              {sheet.metrics.length > 0 && (
                 <span className="text-[10px] text-muted-foreground">
-                  {worksheet.config.metrics.length} metric{worksheet.config.metrics.length !== 1 ? "s" : ""}
+                  {sheet.metrics.length} metric{sheet.metrics.length !== 1 ? "s" : ""}
+                </span>
+              )}
+              {sheets.length > 1 && (
+                <span className="text-[10px] text-muted-foreground">
+                  {sheets.length} sheets
                 </span>
               )}
             </div>

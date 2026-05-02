@@ -35,23 +35,23 @@ const typeIcon: Record<string, React.ComponentType<{ className?: string }>> = {
 
 const sectionStyle = {
   dimension: {
-    header: "bg-violet-50 border-violet-200 text-violet-800",
+    header: "bg-violet-50/80 border-violet-100 text-violet-800",
     headerIcon: "text-violet-600",
-    pill: "border-violet-200 bg-white text-violet-800 hover:bg-violet-50 hover:border-violet-400",
+    pill: "border-violet-200 bg-white text-violet-800 hover:bg-violet-50 hover:border-violet-300",
     pillActive: "bg-violet-600 border-violet-600 text-white hover:bg-violet-700",
-    dropActive: "border-violet-400 bg-violet-50",
-    dropIdle: "border-muted-foreground/20 bg-muted/20",
+    dropActive: "border-violet-300 bg-violet-50/60",
+    dropIdle: "border-slate-200 bg-white",
     label: "Dimensions",
     icon: Tag,
     desc: "Categories & labels",
   },
   measure: {
-    header: "bg-brand-tint-100 border-brand-tint-400 text-brand-deep",
+    header: "bg-brand-tint-100/80 border-brand-tint-200 text-brand-deep",
     headerIcon: "text-brand",
-    pill: "border-brand-tint-400 bg-white text-brand-deep hover:bg-brand-tint-100 hover:border-brand-light",
+    pill: "border-brand-tint-300 bg-white text-brand-deep hover:bg-brand-tint-100 hover:border-brand-light",
     pillActive: "bg-brand border-brand text-white hover:bg-brand-dark",
-    dropActive: "border-brand-light bg-brand-tint-100",
-    dropIdle: "border-muted-foreground/20 bg-muted/20",
+    dropActive: "border-brand-light bg-brand-tint-100/70",
+    dropIdle: "border-slate-200 bg-white",
     label: "Measures",
     icon: BarChart2,
     desc: "Numeric values",
@@ -175,7 +175,7 @@ function DraggablePill({
       ref={setNodeRef}
       style={{ opacity: isDragging ? 0.3 : 1 }}
       className={cn(
-        "group relative flex items-center gap-1 pl-1.5 pr-2 py-1 rounded-full border text-xs font-medium transition-all cursor-pointer select-none",
+        "group relative flex h-8 w-full max-w-full items-center gap-1 rounded-lg border px-2 text-xs font-medium transition-all cursor-pointer select-none",
         inUse ? styles.pillActive : styles.pill
       )}
     >
@@ -184,7 +184,7 @@ function DraggablePill({
         {...attributes}
         {...listeners}
         onClick={(e) => e.stopPropagation()}
-        className="cursor-grab active:cursor-grabbing touch-none opacity-30 hover:opacity-60 transition-opacity p-0.5"
+        className="cursor-grab active:cursor-grabbing touch-none opacity-30 hover:opacity-60 transition-opacity"
         title="Drag to recategorise"
       >
         <GripVertical className="h-3 w-3" />
@@ -193,10 +193,10 @@ function DraggablePill({
       {/* Clickable content */}
       <button
         onClick={onClick}
-        className="flex items-center gap-1 min-w-0"
+        className="flex min-w-0 flex-1 items-center gap-1"
       >
         <Icon className="h-3 w-3 shrink-0 opacity-70" />
-        <span className="truncate max-w-[90px]">{field.name}</span>
+        <span className="truncate">{field.name}</span>
         {inUse && <span className="text-[9px] opacity-80 ml-0.5">✓</span>}
       </button>
 
@@ -243,23 +243,23 @@ function DroppableSection({
   return (
     <div className="space-y-1.5">
       {/* Section header */}
-      <div className={cn("flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-[10px] font-bold uppercase tracking-wider", styles.header)}>
+      <div className={cn("flex h-9 items-center gap-2 rounded-lg border px-2.5 text-[10px] font-bold uppercase tracking-wider", styles.header)}>
         <HeaderIcon className={cn("h-3.5 w-3.5", styles.headerIcon)} />
         <span>{styles.label}</span>
-        <span className="ml-auto font-normal normal-case opacity-60 text-[9px]">{styles.desc}</span>
-        <span className="font-normal opacity-50 text-[9px] ml-1">({fields.length})</span>
+        <span className="ml-auto max-w-[92px] truncate text-[9px] font-normal normal-case opacity-60">{styles.desc}</span>
+        <span className="ml-1 rounded-full bg-white/60 px-1.5 py-0.5 text-[9px] font-semibold opacity-70">{fields.length}</span>
       </div>
 
       {/* Drop zone */}
       <div
         ref={setNodeRef}
         className={cn(
-          "min-h-[52px] rounded-xl border-2 border-dashed p-2 flex flex-wrap gap-1.5 transition-all duration-150",
+          "min-h-[48px] rounded-lg border border-dashed p-1.5 flex flex-col gap-1.5 transition-all duration-150",
           isOver ? styles.dropActive : styles.dropIdle
         )}
       >
         {fields.length === 0 ? (
-          <p className="text-[10px] text-muted-foreground/40 italic m-auto text-center w-full py-1">
+          <p className="m-auto w-full py-1 text-center text-[10px] text-muted-foreground/40">
             {isOver ? "Drop here ↓" : "Drag fields here to recategorise"}
           </p>
         ) : (
@@ -325,9 +325,9 @@ export function FieldPanel({ fields, fileName, config, categoryMap, datasetId, o
   const inUseCount = fields.filter((f) => isFieldInUse(f.name, config)).length;
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full flex-col bg-white">
       {/* Header */}
-      <div className="px-4 py-3 border-b bg-slate-50/60">
+      <div className="border-b bg-slate-50/70 px-4 py-3">
         <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-0.5">
           Data Fields
         </p>
@@ -335,14 +335,14 @@ export function FieldPanel({ fields, fileName, config, categoryMap, datasetId, o
       </div>
 
       {/* Tip */}
-      <div className="px-4 py-2 bg-slate-50 border-b border-slate-100">
+      <div className="border-b border-slate-100 bg-white px-4 py-2">
         <p className="text-[10px] text-slate-500 leading-relaxed">
           <span className="font-semibold text-slate-600">Click</span> a pill to add to chart &nbsp;·&nbsp; <span className="font-semibold text-slate-600">Drag</span> between sections to recategorise
         </p>
       </div>
 
       {/* Drag context + sections */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-4">
+      <div className="flex-1 space-y-3 overflow-y-auto p-3">
         <DndContext
           sensors={sensors}
           onDragStart={handleDragStart}
@@ -371,7 +371,7 @@ export function FieldPanel({ fields, fileName, config, categoryMap, datasetId, o
           {/* Floating drag overlay */}
           <DragOverlay dropAnimation={{ duration: 150, easing: "ease" }}>
             {dragging ? (
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-gray-300 bg-white shadow-xl text-xs font-medium text-gray-700 ring-2 ring-brand-light ring-offset-1">
+              <div className="flex h-8 items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-2.5 text-xs font-medium text-gray-700 shadow-xl ring-2 ring-brand-light ring-offset-1">
                 <GripVertical className="h-3 w-3 opacity-40" />
                 {dragging.name}
               </div>
@@ -381,7 +381,7 @@ export function FieldPanel({ fields, fileName, config, categoryMap, datasetId, o
       </div>
 
       {/* Footer */}
-      <div className="px-4 py-2 border-t bg-slate-50/60 flex items-center justify-between text-[10px] text-slate-400">
+      <div className="flex items-center justify-between border-t bg-slate-50/70 px-4 py-2 text-[10px] text-slate-400">
         <span>{dimensions.length} dim · {measures.length} meas</span>
         <span className={inUseCount > 0 ? "text-brand font-medium" : ""}>{inUseCount} in use</span>
       </div>

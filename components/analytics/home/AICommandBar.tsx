@@ -3,7 +3,8 @@
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useWorksheetStore } from "@/store/worksheetStore";
-import type { Dataset, WorksheetConfig } from "@/types";
+import type { Dataset, WorkbookConfig, WorkbookSheet, WorksheetConfig } from "@/types";
+import { generateId } from "@/lib/utils/ids";
 import { Button } from "@/components/ui/button";
 import {
   Sparkles, Loader2, ChevronDown, Check, X,
@@ -122,6 +123,17 @@ interface GeneratedResult {
   description: string;
   insight:     string;
   config:      WorksheetConfig;
+  sheets:      Array<{
+    title: string;
+    description: string;
+    insight: string;
+    config: WorksheetConfig;
+  }>;
+  dataCoverage: Array<{
+    sheetTitle: string;
+    field: string;
+    distinctCount: number;
+  }>;
 }
 
 export function AICommandBar() {
@@ -141,7 +153,7 @@ export function AICommandBar() {
   const pickable = datasets.filter(
     (d) => !d.accessType || d.accessType === "own" || d.isSeed || d.accessType === "seed"
   );
-  const effectiveDatasetId = datasetId || pickable[0]?.id || "";
+  const effectiveDatasetId = datasetId || (pickable.length === 1 ? pickable[0]?.id : "");
   const dataset = datasets.find((d) => d.id === effectiveDatasetId);
 
   async function handleGenerate() {
@@ -168,6 +180,10 @@ export function AICommandBar() {
         description: data.description,
         insight:     data.insight ?? "",
         config:      data.config,
+        sheets:      Array.isArray(data.sheets) && data.sheets.length > 0
+          ? data.sheets
+          : [{ title: data.title, description: data.description, insight: data.insight ?? "", config: data.config }],
+        dataCoverage: Array.isArray(data.dataCoverage) ? data.dataCoverage : [],
       });
       setPhase("preview");
     } catch (err) {
@@ -181,28 +197,40 @@ export function AICommandBar() {
     setPhase("saving");
 
     try {
-      const res = await fetch("/api/worksheets", {
+      const sheets: WorkbookSheet[] = result.sheets.map((generated, index) => ({
+        ...generated.config,
+        id: generateId(),
+        name: generated.title || `Sheet ${index + 1}`,
+        description: generated.description || undefined,
+      }));
+      const workbookConfig: WorkbookConfig = {
+        version: 1,
+        activeSheetId: sheets[0].id,
+        sheets,
+      };
+
+      const res = await fetch("/api/workbooks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           datasetId:   dataset.id,
           name:        result.title,
           description: result.description || undefined,
-          config:      result.config,
+          config:      workbookConfig,
           status:      "saved",
         }),
       });
 
       if (!res.ok) {
         const e = await res.json();
-        throw new Error(e.error ?? "Failed to create worksheet");
+        throw new Error(e.error ?? "Failed to create workbook");
       }
 
       const worksheet = await res.json();
       addWorksheet(worksheet);
-      router.push(`/analytics/worksheet/${worksheet.id}`);
+      router.push(`/analytics/workbook/${worksheet.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create worksheet");
+      setError(err instanceof Error ? err.message : "Failed to create workbook");
       setPhase("error");
     }
   }
@@ -282,6 +310,16 @@ export function AICommandBar() {
           {error}
         </p>
       )}
+      {phase === "idle" && hydrated && pickable.length > 1 && !effectiveDatasetId && (
+        <p className="text-xs text-muted-foreground px-1">
+          Choose the dataset AI should use before generating a workbook.
+        </p>
+      )}
+      {phase === "idle" && dataset && (
+        <p className="text-xs text-muted-foreground px-1">
+          AI will use {dataset.fileName}{dataset.rowCount !== undefined ? ` (${dataset.rowCount.toLocaleString()} rows)` : ""}.
+        </p>
+      )}
 
       {/* Config preview + actions */}
       {(phase === "preview" || phase === "saving") && result && (
@@ -291,6 +329,21 @@ export function AICommandBar() {
             description={result.description}
             config={result.config}
           />
+          {result.sheets.length > 1 && (
+            <p className="text-xs text-muted-foreground px-1">
+              AI will create {result.sheets.length} workbook sheets.
+            </p>
+          )}
+          {result.dataCoverage.length > 0 && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              <p className="font-semibold">Dataset coverage check</p>
+              {result.dataCoverage.map((item) => (
+                <p key={`${item.sheetTitle}-${item.field}`}>
+                  {item.sheetTitle}: {item.field} has {item.distinctCount.toLocaleString()} distinct value{item.distinctCount !== 1 ? "s" : ""} in {dataset?.fileName}.
+                </p>
+              ))}
+            </div>
+          )}
           {result.insight && (
             <p className="text-xs text-slate-600 leading-relaxed px-1 border-l-2 border-brand/30 pl-3 italic">
               {result.insight}
@@ -305,7 +358,7 @@ export function AICommandBar() {
             >
               {phase === "saving"
                 ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Creating…</>
-                : <><BarChart2 className="h-3.5 w-3.5" /> Open in Worksheet Builder</>
+                : <><BarChart2 className="h-3.5 w-3.5" /> Open in Workbook Builder</>
               }
             </Button>
           </div>

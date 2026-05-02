@@ -1,14 +1,5 @@
-import type { Metadata } from "next";
-import { WorksheetBuilder } from "@/components/analytics/worksheet/WorksheetBuilder";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: "New Worksheet | Eyemark",
-};
-
-export default function NewWorksheetPage() {
-  return (
-    <div className="h-full min-h-0 min-w-0 overflow-hidden">
-      <WorksheetBuilder />
-    </div>
-  );
+export default function LegacyNewWorksheetPage() {
+  redirect("/analytics/workbook/new");
 }

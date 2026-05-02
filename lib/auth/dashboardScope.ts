@@ -18,6 +18,7 @@ export interface DashboardWorksheetRow {
   id: string;
   dataset_id: string;
   name: string;
+  description?: string | null;
   config: unknown;
   status: string;
   created_at: string;
@@ -63,7 +64,7 @@ export async function loadDashboardScope(
   if (worksheetIds.length > 0) {
     const { data, error } = await serviceClient
       .from("worksheets")
-      .select("id, dataset_id, name, config, status, created_at, updated_at")
+      .select("id, dataset_id, name, description, config, status, created_at, updated_at")
       .in("id", worksheetIds);
 
     if (error) {

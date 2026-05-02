@@ -6,7 +6,7 @@ import type { Layout as RGLLayout } from "react-grid-layout/legacy";
 import {
   Canvas, WidgetBlockConfig, TextBlockConfig,
   FilterBlockConfig, DatasetPreviewBlockConfig, ActiveGlobalFilters, GlobalFilterValue,
-  GridLayoutItem, BlockType, ResolvedChartData, SortOrder, ChartType, Worksheet,
+  GridLayoutItem, BlockType, ResolvedChartData, SortOrder, ChartType, ActiveSmartFilters, WorkbookSheet,
 } from "@/types";
 import { useCanvasStore } from "@/store/canvasStore";
 import { useWorksheetStore } from "@/store/worksheetStore";
@@ -17,7 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { generateId } from "@/lib/utils/ids";
-import { Plus, CheckCircle2, ArrowLeft, BarChart2, Type, Trash2, Globe, Filter, GripVertical, Loader2, Info, RefreshCw, Pencil, X, Sparkles, Table2, ArrowUpDown, TrendingUp } from "lucide-react";
+import { Plus, CheckCircle2, ArrowLeft, BarChart2, Type, Trash2, Globe, Filter, GripVertical, Loader2, Info, RefreshCw, Pencil, X, Sparkles, Table2, ArrowUpDown, TrendingUp, FileText } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChartRenderer } from "@/components/shared/charts/ChartRenderer";
@@ -27,6 +27,8 @@ import { FilterBlockView } from "./FilterBlockView";
 import { CanvasFilterBar } from "./CanvasFilterBar";
 import { PublishModal } from "./PublishModal";
 import { AIAssistantModal } from "./AIAssistantModal";
+import { getWorkbookSheet, getWorkbookSheets, normalizeWorkbookConfig } from "@/lib/workbook";
+import { toast } from "@/lib/toast";
 
 const GridLayout = WidthProvider(ReactGridLayout);
 
@@ -65,6 +67,16 @@ function makeDefaultItem(id: string, type: BlockType, x: number, y: number): Gri
   return                         { i: id, x, y, w: 6,  h: 3,  minW: 2, minH: 2 };
 }
 
+function smartFiltersForApi(activeSmartFilters: ActiveSmartFilters) {
+  return activeSmartFilters.map((id) => ({
+    id: `smart-${id}`,
+    field: "_smart",
+    operator: "equals" as const,
+    value: id,
+    label: "Smart Filter",
+  }));
+}
+
 // ── AutoSizer — measures available height and passes it to children ─
 
 function AutoSizer({ children }: { children: (height: number) => React.ReactNode }) {
@@ -88,27 +100,47 @@ function AutoSizer({ children }: { children: (height: number) => React.ReactNode
 // ── Widget block content ──────────────────────────────────────────
 
 function WidgetBlockEdit({
-  block, activeFilters, onDataCountChange, refreshKey,
+  block, activeFilters, activeSmartFilters, onDataCountChange, refreshKey,
 }: {
   block: WidgetBlockConfig;
   activeFilters: ActiveGlobalFilters;
+  activeSmartFilters: ActiveSmartFilters;
   onDataCountChange?: (count: number) => void;
   refreshKey?: number;
 }) {
   const worksheet = useWorksheetStore((s) => s.getWorksheetById(block.worksheetId));
   const dataset = useWorksheetStore((s) => worksheet ? s.getDatasetById(worksheet.datasetId) : undefined);
+  const sheet = useMemo(
+    () => worksheet ? getWorkbookSheet(worksheet, block.sheetId) : null,
+    [worksheet, block.sheetId]
+  );
   const [chartData, setChartData] = useState<ResolvedChartData | null>(null);
   const [fetching, setFetching] = useState(false);
-  const abortRef = useRef<AbortController | null>(null);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const requestSeq = useRef(0);
+  const sheetKey = useMemo(() => {
+    if (!sheet) return "";
+    return JSON.stringify({
+      metrics: sheet.metrics,
+      dimensions: sheet.dimensions,
+      filters: sheet.filters ?? [],
+      sort: sheet.sort ?? "natural",
+      chartType: sheet.chartType,
+      logScale: sheet.logScale ?? false,
+    });
+  }, [sheet]);
+  const activeFiltersKey = useMemo(() => JSON.stringify(activeFilters), [activeFilters]);
+  const activeSmartFiltersKey = useMemo(() => JSON.stringify(activeSmartFilters), [activeSmartFilters]);
 
   useEffect(() => {
     if (!worksheet || !dataset) return;
-    if (worksheet.config.metrics.length === 0) { setChartData(null); return; }
+    if (!sheet || sheet.metrics.length === 0) { setChartData(null); setFetchError(null); return; }
 
-    if (abortRef.current) abortRef.current.abort();
-    const ctrl = new AbortController();
-    abortRef.current = ctrl;
+    const seq = requestSeq.current + 1;
+    requestSeq.current = seq;
     setFetching(true);
+    setFetchError(null);
+    setChartData(null);
 
     // Split range values out of globalFilters → merge into worksheetFilters as gte/lte
     const { cleanGlobalFilters, extraFilters } = splitFiltersForApi(activeFilters);
@@ -118,22 +150,31 @@ function WidgetBlockEdit({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         datasetId: dataset.id,
-        metrics: worksheet.config.metrics,
-        dimensions: worksheet.config.dimensions,
-        worksheetFilters: [...(worksheet.config.filters ?? []), ...extraFilters],
+        metrics: sheet.metrics,
+        dimensions: sheet.dimensions,
+        worksheetFilters: [...(sheet.filters ?? []), ...extraFilters, ...smartFiltersForApi(activeSmartFilters)],
         globalFilters: cleanGlobalFilters,
-        sort: worksheet.config.sort ?? "natural",
+        sort: sheet.sort ?? "natural",
       }),
-      signal: ctrl.signal,
     })
-      .then((r) => r.ok ? r.json() : null)
-      .then((d) => setChartData(d))
-      .catch(() => setChartData(null))
-      .finally(() => setFetching(false));
-
-    return () => ctrl.abort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [worksheet, dataset, activeFilters, refreshKey]);
+      .then(async (r) => {
+        if (r.ok) return r.json();
+        const body = await r.json().catch(() => ({})) as { error?: string };
+        throw new Error(body.error ?? `Aggregate request failed (${r.status})`);
+      })
+      .then((d) => {
+        if (requestSeq.current !== seq) return;
+        setChartData(d);
+      })
+      .catch((err) => {
+        if (requestSeq.current !== seq) return;
+        setChartData(null);
+        setFetchError(err instanceof Error ? err.message : "Failed to load chart data");
+      })
+      .finally(() => {
+        if (requestSeq.current === seq) setFetching(false);
+      });
+  }, [worksheet, dataset, sheet, sheetKey, activeFilters, activeFiltersKey, activeSmartFilters, activeSmartFiltersKey, refreshKey]);
 
   // Report data count to parent card
   useEffect(() => {
@@ -142,7 +183,13 @@ function WidgetBlockEdit({
 
   if (!worksheet) return (
     <div className="flex items-center justify-center h-full text-sm text-muted-foreground px-4">
-      Worksheet not found
+      Workbook not found
+    </div>
+  );
+
+  if (!sheet) return (
+    <div className="flex items-center justify-center h-full text-sm text-muted-foreground px-4">
+      Sheet not found
     </div>
   );
 
@@ -154,7 +201,7 @@ function WidgetBlockEdit({
 
   if (!chartData) return (
     <div className="flex items-center justify-center h-full text-sm text-gray-400 px-4">
-      {worksheet.config.metrics.length === 0 ? "Add metrics to this worksheet to see data" : "No data"}
+      {fetchError ?? (!sheet || sheet.metrics.length === 0 ? "Add metrics to this workbook sheet to see data" : "No data")}
     </div>
   );
 
@@ -164,9 +211,9 @@ function WidgetBlockEdit({
         {(h) => (
           <ChartRenderer
             chartData={chartData}
-            chartType={worksheet.config.chartType}
+            chartType={sheet.chartType}
             height={Math.max(h - 4, 80)}
-            logScale={worksheet.config.logScale}
+            logScale={sheet.logScale}
           />
         )}
       </AutoSizer>
@@ -187,12 +234,17 @@ function TextBlockEdit({ block, canvasId }: { block: TextBlockConfig; canvasId: 
       const res = await fetch("/api/ai/explain", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ worksheetId: block.worksheetId, canvasId }),
+        body:    JSON.stringify({ worksheetId: block.worksheetId, sheetId: block.sheetId, canvasId }),
       });
       const data = await res.json();
       if (res.ok && data.explanation) {
         updateBlock(canvasId, block.id, { content: data.explanation } as Partial<TextBlockConfig>);
+        toast.success("AI insight refreshed");
+      } else {
+        toast.error(data.error ?? "AI could not refresh this insight");
       }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "AI could not refresh this insight");
     } finally {
       setRefreshing(false);
     }
@@ -333,33 +385,46 @@ const CARD_SHADOW = "0px 0px 5px 0px rgba(0,0,0,.02), 0px 2px 10px 0px rgba(0,0,
 // ── Widget card (full-bleed header redesign) ──────────────────────
 
 function WidgetCard({
-  block, canvasId, title, activeFilters, onFilterChange,
+  block, canvasId, title, activeFilters, activeSmartFilters, onFilterChange,
 }: {
   block: WidgetBlockConfig;
   canvasId: string;
   title: string;
   activeFilters: ActiveGlobalFilters;
+  activeSmartFilters: ActiveSmartFilters;
   onFilterChange: (field: string, value: GlobalFilterValue) => void;
 }) {
   const removeBlock = useCanvasStore((s) => s.removeBlock);
   const addBlock    = useCanvasStore((s) => s.addBlock);
   const ws = useWorksheetStore((s) => s.getWorksheetById(block.worksheetId));
+  const sheet = useMemo(
+    () => ws ? getWorkbookSheet(ws, block.sheetId) : null,
+    [ws, block.sheetId]
+  );
   const updateWorksheet = useWorksheetStore((s) => s.updateWorksheet);
   const [dataCount,  setDataCount]  = useState<number | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [explaining, setExplaining] = useState(false);
   const [updatingConfig, setUpdatingConfig] = useState(false);
+  const [insightPromptOpen, setInsightPromptOpen] = useState(false);
+  const [insightInstructions, setInsightInstructions] = useState("");
 
-  const supportsLogScale = ws ? LOG_SCALE_CHART_TYPES.includes(ws.config.chartType) : false;
+  const supportsLogScale = sheet ? LOG_SCALE_CHART_TYPES.includes(sheet.chartType) : false;
 
-  async function patchWorksheetConfig(patch: Partial<Worksheet["config"]>) {
-    if (!ws) return;
-    const nextConfig = { ...ws.config, ...patch };
+  async function patchSheetConfig(patch: Partial<WorkbookSheet>) {
+    if (!ws || !sheet) return;
+    const workbook = normalizeWorkbookConfig(ws.config, { name: ws.name, description: ws.description });
+    const nextConfig = {
+      ...workbook,
+      sheets: workbook.sheets.map((candidate) =>
+        candidate.id === sheet.id ? { ...candidate, ...patch } : candidate
+      ),
+    };
     updateWorksheet(ws.id, { config: nextConfig });
     setRefreshKey((k) => k + 1);
     setUpdatingConfig(true);
     try {
-      await fetch(`/api/worksheets/${ws.id}`, {
+      await fetch(`/api/workbooks/${ws.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ config: nextConfig }),
@@ -369,13 +434,18 @@ function WidgetCard({
     }
   }
 
-  async function handleExplain() {
+  async function handleExplain(instructions = "") {
     setExplaining(true);
     try {
       const res  = await fetch("/api/ai/explain", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ worksheetId: block.worksheetId, canvasId }),
+        body:    JSON.stringify({
+          worksheetId: block.worksheetId,
+          sheetId: block.sheetId,
+          canvasId,
+          instructions: instructions.trim() || undefined,
+        }),
       });
       const data = await res.json();
       if (res.ok && data.explanation) {
@@ -385,8 +455,16 @@ function WidgetCard({
           order:       0,
           content:     data.explanation,
           worksheetId: block.worksheetId,
+          sheetId:     block.sheetId,
         });
+        setInsightPromptOpen(false);
+        setInsightInstructions("");
+        toast.success("AI insight added");
+      } else {
+        toast.error(data.error ?? "AI could not generate an insight");
       }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "AI could not generate an insight");
     } finally {
       setExplaining(false);
     }
@@ -405,10 +483,11 @@ function WidgetCard({
   );
 
   return (
-    <div
-      className="h-full flex flex-col bg-white rounded-xl border border-gray-100 overflow-hidden"
-      style={{ boxShadow: CARD_SHADOW }}
-    >
+    <>
+      <div
+        className="h-full flex flex-col bg-white rounded-xl border border-gray-100 overflow-hidden"
+        style={{ boxShadow: CARD_SHADOW }}
+      >
       {/* Header — also the drag handle */}
       <div className="rgl-drag-handle px-4 pt-3.5 pb-2.5 shrink-0 cursor-grab active:cursor-grabbing select-none">
         <div className="flex items-start gap-2">
@@ -418,14 +497,14 @@ function WidgetCard({
             className="flex items-center gap-0.5 shrink-0 -mt-0.5"
             onPointerDown={(e) => e.stopPropagation()}
           >
-            {ws && ws.config.chartType !== "kpi" && (
+            {sheet && sheet.chartType !== "kpi" && (
               <>
                 <div className="flex h-6 items-center gap-1 rounded-md border border-gray-100 bg-gray-50 px-1.5">
                   <ArrowUpDown className="h-3 w-3 text-gray-400" />
                   <Select
-                    value={ws.config.sort ?? "natural"}
+                    value={sheet.sort ?? "natural"}
                     disabled={updatingConfig}
-                    onValueChange={(v) => v && patchWorksheetConfig({ sort: v as SortOrder })}
+                    onValueChange={(v) => v && patchSheetConfig({ sort: v as SortOrder })}
                   >
                     <SelectTrigger className="h-5 w-[92px] border-0 bg-transparent p-0 text-[10px] text-gray-500 shadow-none">
                       <SelectValue />
@@ -443,28 +522,28 @@ function WidgetCard({
                   <button
                     type="button"
                     disabled={updatingConfig}
-                    onClick={() => patchWorksheetConfig({ logScale: !ws.config.logScale })}
+                    onClick={() => patchSheetConfig({ logScale: !sheet.logScale })}
                     className={cn(
                       "inline-flex h-6 items-center gap-1 rounded-md border px-1.5 text-[10px] font-medium transition-colors disabled:opacity-50",
-                      ws.config.logScale
+                      sheet.logScale
                         ? "border-brand/30 bg-brand-tint-100 text-brand-deep"
                         : "border-gray-100 bg-gray-50 text-gray-500 hover:text-gray-700"
                     )}
                     role="switch"
-                    aria-checked={Boolean(ws.config.logScale)}
+                    aria-checked={Boolean(sheet.logScale)}
                     title="Toggle logarithmic scale"
                   >
                     <TrendingUp className="h-3 w-3" />
                     <span
                       className={cn(
                         "relative inline-flex h-3.5 w-6 shrink-0 items-center rounded-full transition-colors",
-                        ws.config.logScale ? "bg-brand" : "bg-gray-200"
+                        sheet.logScale ? "bg-brand" : "bg-gray-200"
                       )}
                     >
                       <span
                         className={cn(
                           "h-2.5 w-2.5 rounded-full bg-white shadow-sm transition-transform",
-                          ws.config.logScale ? "translate-x-3" : "translate-x-0.5"
+                          sheet.logScale ? "translate-x-3" : "translate-x-0.5"
                         )}
                       />
                     </span>
@@ -480,8 +559,8 @@ function WidgetCard({
             </button>
             <button
               className="h-6 w-6 flex items-center justify-center rounded-md text-gray-300 hover:text-brand hover:bg-brand/10 transition-all disabled:opacity-40"
-              title="Explain this chart with AI"
-              onClick={handleExplain}
+              title="Write AI insight"
+              onClick={() => setInsightPromptOpen(true)}
               disabled={explaining}
             >
               {explaining
@@ -498,9 +577,9 @@ function WidgetCard({
             </button>
             {ws && (
               <a
-                href={`/analytics/worksheet/${ws.id}`}
+                href={`/analytics/workbook/${ws.id}`}
                 className="h-6 w-6 flex items-center justify-center rounded-md text-gray-300 hover:text-gray-500 hover:bg-gray-100 transition-all"
-                title="Edit worksheet"
+                title="Edit workbook"
               >
                 <Pencil className="h-3.5 w-3.5" />
               </a>
@@ -550,23 +629,63 @@ function WidgetCard({
         <WidgetBlockEdit
           block={block}
           activeFilters={activeFilters}
+          activeSmartFilters={activeSmartFilters}
           onDataCountChange={setDataCount}
           refreshKey={refreshKey}
         />
       </div>
-    </div>
+      </div>
+
+      <Dialog open={insightPromptOpen} onOpenChange={setInsightPromptOpen}>
+        <DialogContent className="sm:max-w-[460px]">
+          <DialogHeader>
+            <DialogTitle>Write AI Insight</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                Writing instructions
+              </Label>
+              <textarea
+                value={insightInstructions}
+                onChange={(e) => setInsightInstructions(e.target.value)}
+                placeholder="e.g. Write for executive directors, focus on risks and underperformance, keep it concise."
+                className="min-h-28 w-full resize-none rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none transition-colors focus:border-brand"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Leave blank for the default plain-English analysis.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setInsightPromptOpen(false)} disabled={explaining}>
+              Cancel
+            </Button>
+            <Button
+              className="gap-1.5"
+              onClick={() => handleExplain(insightInstructions)}
+              disabled={explaining}
+            >
+              {explaining && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              Generate Insight
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
 // ── Unified card wrapper (text + filter + preview blocks) ────────
 
 function BlockCard({
-  block, canvasId, title, activeFilters, onFilterChange,
+  block, canvasId, title, activeFilters, activeSmartFilters, onFilterChange,
 }: {
   block: Canvas["blocks"][number];
   canvasId: string;
   title: string;
   activeFilters: ActiveGlobalFilters;
+  activeSmartFilters: ActiveSmartFilters;
   onFilterChange: (field: string, value: GlobalFilterValue) => void;
 }) {
   const removeBlock = useCanvasStore((s) => s.removeBlock);
@@ -578,6 +697,7 @@ function BlockCard({
         canvasId={canvasId}
         title={title}
         activeFilters={activeFilters}
+        activeSmartFilters={activeSmartFilters}
         onFilterChange={onFilterChange}
       />
     );
@@ -636,6 +756,7 @@ export function CanvasBuilder({ existingCanvas }: Props) {
   const [nameOpen, setNameOpen] = useState(!existingCanvas);
   const [name, setName] = useState(existingCanvas?.name ?? "");
   const [addOpen, setAddOpen] = useState(false);
+  const [addSearch, setAddSearch] = useState("");
   const [filterConfigOpen, setFilterConfigOpen] = useState(false);
   const [filterField, setFilterField] = useState("");
   const [filterType, setFilterType] = useState<"dropdown" | "multi_select">("dropdown");
@@ -650,6 +771,7 @@ export function CanvasBuilder({ existingCanvas }: Props) {
     existingCanvas?.updatedAt ? new Date(existingCanvas.updatedAt) : null
   );
   const [activeFilters, setActiveFilters] = useState<ActiveGlobalFilters>({});
+  const [activeSmartFilters, setActiveSmartFilters] = useState<ActiveSmartFilters>([]);
 
   // WidthProvider does a server-side pass with width=0; skip render until mounted
   const [mounted, setMounted] = useState(false);
@@ -660,6 +782,15 @@ export function CanvasBuilder({ existingCanvas }: Props) {
     const params = new URLSearchParams(window.location.search);
     const restored = decodeFiltersParam(params.get("filters"));
     if (Object.keys(restored).length > 0) setActiveFilters(restored);
+    const smart = params.get("smartFilters");
+    if (smart) {
+      try {
+        const parsed = JSON.parse(smart);
+        if (Array.isArray(parsed)) setActiveSmartFilters(parsed.filter((id) => typeof id === "string"));
+      } catch {
+        // Ignore malformed URL state.
+      }
+    }
   }, []);
 
   // ── Sync active filters → URL ─────────────────────────────────────
@@ -672,10 +803,15 @@ export function CanvasBuilder({ existingCanvas }: Props) {
     } else {
       params.delete("filters");
     }
+    if (activeSmartFilters.length > 0) {
+      params.set("smartFilters", JSON.stringify(activeSmartFilters));
+    } else {
+      params.delete("smartFilters");
+    }
     const search = params.toString();
     const newUrl = window.location.pathname + (search ? `?${search}` : "");
     window.history.replaceState(null, "", newUrl);
-  }, [activeFilters, mounted]);
+  }, [activeFilters, activeSmartFilters, mounted]);
 
   const canvas = canvasId ? getCanvasById(canvasId) : null;
 
@@ -685,10 +821,12 @@ export function CanvasBuilder({ existingCanvas }: Props) {
   const blocksKey = canvas ? JSON.stringify(canvas.blocks) : null;
   const layoutKey = canvas ? JSON.stringify(canvas.layout) : null;
   const canvasRef = useRef(canvas);
-  canvasRef.current = canvas;
   const isCanvasFirstRender = useRef(true);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    canvasRef.current = canvas;
+  }, [canvas]);
+
   useEffect(() => {
     if (isCanvasFirstRender.current) {
       isCanvasFirstRender.current = false;
@@ -748,6 +886,22 @@ export function CanvasBuilder({ existingCanvas }: Props) {
     return Array.from(ids);
   }, [canvas, getWorksheetById]);
 
+  const workbookGroups = useMemo(() => {
+    const query = addSearch.trim().toLowerCase();
+    return worksheets
+      .map((ws) => {
+        const dataset = getDatasetById(ws.datasetId);
+        const sheets = getWorkbookSheets(ws).filter((sheet) => {
+          if (!query) return true;
+          return `${ws.name} ${sheet.name} ${sheet.chartType} ${dataset?.fileName ?? ""}`
+            .toLowerCase()
+            .includes(query);
+        });
+        return { workbook: ws, dataset, sheets };
+      })
+      .filter((group) => group.sheets.length > 0);
+  }, [addSearch, worksheets, getDatasetById]);
+
   // ── Handlers ────────────────────────────────────────────────────
 
   async function initCanvas(n: string) {
@@ -780,10 +934,10 @@ export function CanvasBuilder({ existingCanvas }: Props) {
     updateLayout(canvas.id, merged);
   }
 
-  function handleAddWidget(worksheetId: string) {
+  function handleAddWidget(worksheetId: string, sheetId?: string) {
     if (!canvas) return;
     const block: WidgetBlockConfig = {
-      id: generateId(), type: "widget", worksheetId, order: canvas.blocks.length,
+      id: generateId(), type: "widget", worksheetId, sheetId, order: canvas.blocks.length,
     };
     addBlock(canvas.id, block);
     setAddOpen(false);
@@ -831,8 +985,10 @@ export function CanvasBuilder({ existingCanvas }: Props) {
 
   function blockTitle(block: Canvas["blocks"][number]): string {
     if (block.type === "widget") {
-      const ws = getWorksheetById((block as WidgetBlockConfig).worksheetId);
-      return (block as WidgetBlockConfig).title ?? ws?.name ?? "Widget";
+      const widget = block as WidgetBlockConfig;
+      const ws = getWorksheetById(widget.worksheetId);
+      const sheet = ws ? getWorkbookSheet(ws, widget.sheetId) : null;
+      return widget.title ?? sheet?.name ?? ws?.name ?? "Widget";
     }
     if (block.type === "text")    return (block as TextBlockConfig).worksheetId ? "AI Insight" : "Text block";
     if (block.type === "preview") {
@@ -878,6 +1034,11 @@ export function CanvasBuilder({ existingCanvas }: Props) {
               <Button variant="outline" size="sm" className="gap-2" onClick={() => setAddOpen(true)}>
                 <Plus className="h-4 w-4" /> Add Block
               </Button>
+              <Link href={`/analytics/reports?sourceType=canvas&sourceId=${canvas.id}`}>
+                <Button variant="outline" size="sm" className="gap-2">
+                  <FileText className="h-4 w-4" /> Report
+                </Button>
+              </Link>
               <Button variant="outline" size="sm" className="gap-2" onClick={() => setPublishOpen(true)}>
                 <Globe className="h-4 w-4" />
                 {canvas.published ? "Republish" : "Publish"}
@@ -905,9 +1066,14 @@ export function CanvasBuilder({ existingCanvas }: Props) {
           canvasFields={canvasFields}
           datasetIds={datasetIds}
           activeFilters={activeFilters}
+          activeSmartFilters={activeSmartFilters}
           onFilterChange={handleFilterChange}
-          onClearAll={() => setActiveFilters({})}
+          onClearAll={() => {
+            setActiveFilters({});
+            setActiveSmartFilters([]);
+          }}
           fieldWidgetCounts={fieldWidgetCounts}
+          onSmartFiltersChange={setActiveSmartFilters}
         />
       )}
 
@@ -942,6 +1108,7 @@ export function CanvasBuilder({ existingCanvas }: Props) {
                   canvasId={canvas.id}
                   title={blockTitle(block)}
                   activeFilters={activeFilters}
+                  activeSmartFilters={activeSmartFilters}
                   onFilterChange={handleFilterChange}
                 />
               </div>
@@ -969,8 +1136,8 @@ export function CanvasBuilder({ existingCanvas }: Props) {
       </Dialog>
 
       {/* Add block dialog */}
-      <Dialog open={addOpen} onOpenChange={(open) => { setAddOpen(open); if (!open) { setFilterConfigOpen(false); setPreviewConfigOpen(false); } }}>
-        <DialogContent>
+      <Dialog open={addOpen} onOpenChange={(open) => { setAddOpen(open); if (!open) { setFilterConfigOpen(false); setPreviewConfigOpen(false); setAddSearch(""); } }}>
+        <DialogContent className="w-[min(720px,calc(100vw-2rem))] sm:max-w-[720px]">
           <DialogHeader><DialogTitle>Add Block</DialogTitle></DialogHeader>
           {previewConfigOpen ? (
             <div className="space-y-4 py-2">
@@ -1046,30 +1213,68 @@ export function CanvasBuilder({ existingCanvas }: Props) {
             </div>
           ) : (
             <div className="space-y-3 py-2">
-              <p className="text-sm font-medium text-muted-foreground">Widget (from Worksheet)</p>
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-foreground">Add workbook sheet</p>
+                <p className="text-xs text-muted-foreground">Choose a specific sheet. Canvas widgets stay bound to that sheet.</p>
+              </div>
               {worksheets.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  No worksheets yet.{" "}
-                  <Link href="/analytics/worksheet/new" className="text-brand underline">Create one first.</Link>
+                  No workbooks yet.{" "}
+                  <Link href="/analytics/workbook/new" className="text-brand underline">Create one first.</Link>
                 </p>
               ) : (
-                <div className="space-y-2 max-h-52 overflow-y-auto">
-                  {worksheets.map((ws) => (
-                    <button
-                      key={ws.id}
-                      onClick={() => handleAddWidget(ws.id)}
-                      className="w-full flex items-center gap-3 px-4 py-3 rounded-lg border hover:border-brand hover:bg-brand-tint-100 transition-colors text-left"
-                    >
-                      <BarChart2 className="h-4 w-4 text-brand shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{ws.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {ws.config.chartType} · {ws.config.metrics.length} metric{ws.config.metrics.length !== 1 ? "s" : ""}
-                        </p>
+                <div className="space-y-3">
+                  <Input
+                    value={addSearch}
+                    onChange={(e) => setAddSearch(e.target.value)}
+                    placeholder="Search workbooks or sheets"
+                    className="h-9"
+                  />
+                  <div className="max-h-[360px] overflow-y-auto pr-1 space-y-3">
+                    {workbookGroups.length === 0 ? (
+                      <p className="rounded-lg border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">
+                        No matching workbook sheets.
+                      </p>
+                    ) : workbookGroups.map(({ workbook, dataset, sheets }) => (
+                      <div key={workbook.id} className="rounded-lg border bg-white overflow-hidden">
+                        <div className="flex items-center justify-between gap-3 border-b bg-muted/30 px-3 py-2">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-slate-900">{workbook.name}</p>
+                            <p className="truncate text-xs text-muted-foreground">
+                              {dataset?.fileName ?? "Dataset"} · {sheets.length} sheet{sheets.length !== 1 ? "s" : ""}
+                            </p>
+                          </div>
+                          <Link
+                            href={`/analytics/workbook/${workbook.id}`}
+                            className="shrink-0 text-xs font-medium text-brand hover:underline"
+                            onClick={() => setAddOpen(false)}
+                          >
+                            Edit
+                          </Link>
+                        </div>
+                        <div className="divide-y">
+                          {sheets.map((sheet) => (
+                            <button
+                              key={`${workbook.id}-${sheet.id}`}
+                              onClick={() => handleAddWidget(workbook.id, sheet.id)}
+                              className="w-full flex items-center gap-3 px-3 py-3 hover:bg-brand-tint-100 transition-colors text-left"
+                            >
+                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-brand/10">
+                                <BarChart2 className="h-4 w-4 text-brand" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-slate-900 truncate">{sheet.name}</p>
+                                <p className="text-xs text-muted-foreground truncate">
+                                  {sheet.metrics.length} metric{sheet.metrics.length !== 1 ? "s" : ""} · {sheet.dimensions.length} dimension{sheet.dimensions.length !== 1 ? "s" : ""}
+                                </p>
+                              </div>
+                              <Badge variant="secondary" className="text-xs shrink-0 capitalize">{sheet.chartType.replace("_", " ")}</Badge>
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                      <Badge variant="secondary" className="text-xs shrink-0">{ws.config.chartType}</Badge>
-                    </button>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               )}
               <div className="border-t pt-3 space-y-2">

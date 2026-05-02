@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import type { Dataset, DatasetField, FieldType } from "@/types";
+import type { Dataset, DatasetField, FieldType, Worksheet } from "@/types";
 import { FIELD_TYPE_LABELS } from "@/types";
 import { useWorksheetStore } from "@/store/worksheetStore";
 import { Button } from "@/components/ui/button";
@@ -91,6 +91,7 @@ function typeLabel(field: DatasetField, value: FieldType | "default"): string {
 
 export function DatasetTableView({ dataset }: Props) {
   const addDataset = useWorksheetStore((s) => s.addDataset);
+  const updateWorksheet = useWorksheetStore((s) => s.updateWorksheet);
   const liveDataset = useWorksheetStore((s) => s.getDatasetById(dataset.id)) ?? dataset;
 
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
@@ -168,8 +169,11 @@ export function DatasetTableView({ dataset }: Props) {
         return;
       }
 
-      const body = await res.json() as { fields: DatasetField[] };
+      const body = await res.json() as { fields: DatasetField[]; updatedWorksheets?: Worksheet[] };
       addDataset({ ...liveDataset, fields: body.fields });
+      body.updatedWorksheets?.forEach((worksheet) => {
+        updateWorksheet(worksheet.id, worksheet);
+      });
       setPendingChange(null);
     } catch {
       setError("Network error while updating field type");

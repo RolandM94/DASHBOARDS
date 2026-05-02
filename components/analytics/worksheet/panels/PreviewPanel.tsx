@@ -36,6 +36,26 @@ function getSetupHint(config: WorksheetConfig): string | null {
 // Chart types that render an <svg> and can be exported as PNG
 const SVG_CHART_TYPES = new Set(["bar", "grouped_bar", "line", "area", "pie"]);
 
+function AutoSizer({ children }: { children: (height: number) => React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = useState(400);
+
+  useEffect(() => {
+    if (!ref.current) return;
+    const ro = new ResizeObserver(([entry]) => {
+      if (entry) setHeight(Math.max(320, Math.floor(entry.contentRect.height)));
+    });
+    ro.observe(ref.current);
+    return () => ro.disconnect();
+  }, []);
+
+  return (
+    <div ref={ref} className="h-full min-h-0 min-w-0">
+      {children(height)}
+    </div>
+  );
+}
+
 export function PreviewPanel({ datasetId, rowCount, config, title }: Props) {
   const [chartData, setChartData] = useState<ResolvedChartData | null>(null);
   const [fetching, setFetching] = useState(false);
@@ -190,12 +210,16 @@ export function PreviewPanel({ datasetId, rowCount, config, title }: Props) {
               </div>
             )}
             <div className="min-h-0 min-w-0 flex-1 overflow-hidden px-2 pt-2 pb-3">
-              <ChartRenderer
-                chartData={chartData}
-                chartType={config.chartType}
-                height={400}
-                logScale={config.logScale}
-              />
+              <AutoSizer>
+                {(height) => (
+                  <ChartRenderer
+                    chartData={chartData}
+                    chartType={config.chartType}
+                    height={height}
+                    logScale={config.logScale}
+                  />
+                )}
+              </AutoSizer>
             </div>
           </div>
         )}

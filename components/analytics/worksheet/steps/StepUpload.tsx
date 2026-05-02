@@ -156,7 +156,7 @@ export function StepUpload({ onParsed }: Props) {
             className="w-full"
             onClick={() => onParsed(success.dataset, success.file)}
           >
-            Continue to Build Worksheet
+            Continue to Build Workbook
           </Button>
         ) : (
           <Button

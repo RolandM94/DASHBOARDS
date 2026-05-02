@@ -53,7 +53,7 @@ export function WorksheetBuilder({ existingWorksheet }: Props) {
 
   async function handleSave(ws: Worksheet): Promise<Worksheet | null> {
     if (createdId) {
-      const res = await fetch(`/api/worksheets/${createdId}`, {
+      const res = await fetch(`/api/workbooks/${createdId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -71,7 +71,7 @@ export function WorksheetBuilder({ existingWorksheet }: Props) {
       }
       return null;
     } else {
-      const res = await fetch("/api/worksheets", {
+      const res = await fetch("/api/workbooks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

@@ -21,12 +21,24 @@ interface Result {
   description: string;
   insight:     string;
   config:      WorksheetConfig;
+  sheets:      Array<{
+    title: string;
+    description: string;
+    insight: string;
+    config: WorksheetConfig;
+  }>;
+  dataCoverage: Array<{
+    sheetTitle: string;
+    field: string;
+    distinctCount: number;
+  }>;
 }
 
 interface Props {
   datasetId: string;
   fields:    DatasetField[];
   onApply:   (config: WorksheetConfig, title: string, description: string) => void;
+  onApplyWorkbook?: (sheets: Result["sheets"]) => void;
 }
 
 const CHART_ICONS: Record<string, React.ElementType> = {
@@ -47,7 +59,7 @@ const SUGGESTIONS = [
   "Show trend over time as a line chart",
 ];
 
-export function WorksheetAIPanel({ datasetId, fields, onApply }: Props) {
+export function WorksheetAIPanel({ datasetId, fields, onApply, onApplyWorkbook }: Props) {
   const [phase,   setPhase]   = useState<Phase>("prompt");
   const [prompt,  setPrompt]  = useState("");
   const [refine,  setRefine]  = useState("");
@@ -82,6 +94,7 @@ export function WorksheetAIPanel({ datasetId, fields, onApply }: Props) {
         description: data.description,
         insight:     data.insight,
         config:      data.config,
+        sheets:      data.sheets,
       });
 
       historyRef.current = [
@@ -90,7 +103,16 @@ export function WorksheetAIPanel({ datasetId, fields, onApply }: Props) {
         { role: "assistant", content: assistantReply },
       ];
 
-      setResult({ title: data.title, description: data.description, insight: data.insight, config: data.config });
+      setResult({
+        title: data.title,
+        description: data.description,
+        insight: data.insight,
+        config: data.config,
+        sheets: Array.isArray(data.sheets) && data.sheets.length > 0
+          ? data.sheets
+          : [{ title: data.title, description: data.description, insight: data.insight, config: data.config }],
+        dataCoverage: Array.isArray(data.dataCoverage) ? data.dataCoverage : [],
+      });
       setPhase("result");
       setApplied(false);
     } catch (err) {
@@ -112,7 +134,11 @@ export function WorksheetAIPanel({ datasetId, fields, onApply }: Props) {
 
   function handleApply() {
     if (!result) return;
-    onApply(result.config, result.title, result.description);
+    if (result.sheets.length > 1 && onApplyWorkbook) {
+      onApplyWorkbook(result.sheets);
+    } else {
+      onApply(result.config, result.title, result.description);
+    }
     setApplied(true);
   }
 
@@ -263,6 +289,12 @@ export function WorksheetAIPanel({ datasetId, fields, onApply }: Props) {
                       {result.config.metrics.map((m) => `${m.aggregation}(${m.field})`).join(", ")}
                     </p>
                   )}
+                  {result.sheets.length > 1 && (
+                    <p>
+                      <span className="font-medium text-slate-600">Workbook sheets:</span>{" "}
+                      {result.sheets.length}
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
@@ -274,6 +306,16 @@ export function WorksheetAIPanel({ datasetId, fields, onApply }: Props) {
                 <p className="text-xs text-slate-700 leading-relaxed">{result.insight}</p>
               </div>
             )}
+            {result.dataCoverage.length > 0 && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                <p className="font-semibold">Dataset coverage check</p>
+                {result.dataCoverage.map((item) => (
+                  <p key={`${item.sheetTitle}-${item.field}`}>
+                    {item.sheetTitle}: {item.field} has {item.distinctCount.toLocaleString()} distinct value{item.distinctCount !== 1 ? "s" : ""} in this dataset.
+                  </p>
+                ))}
+              </div>
+            )}
 
             {/* Apply */}
             <Button
@@ -281,9 +323,9 @@ export function WorksheetAIPanel({ datasetId, fields, onApply }: Props) {
               onClick={handleApply}
             >
               {applied ? (
-                <><Check className="h-4 w-4" /> Applied to worksheet</>
+                <><Check className="h-4 w-4" /> Applied</>
               ) : (
-                <><Check className="h-4 w-4" /> Apply to worksheet</>
+                <><Check className="h-4 w-4" /> {result.sheets.length > 1 ? "Apply sheets" : "Apply to sheet"}</>
               )}
             </Button>
 

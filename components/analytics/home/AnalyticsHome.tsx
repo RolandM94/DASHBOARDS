@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Badge }  from "@/components/ui/badge";
 import {
   BarChart2, LayoutDashboard, Plus, Database, Share2,
-  Globe, Users, Lock, Leaf, Trash2,
+  Globe, Users, Lock, Leaf, Trash2, FileText,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -309,14 +309,14 @@ export function AnalyticsHome() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Analytics</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Build worksheets, create canvases, and publish dashboards.
+              Build workbooks, create canvases, and publish dashboards.
             </p>
           </div>
           <div className="flex gap-2">
-            <Link href="/analytics/worksheet/new">
+            <Link href="/analytics/workbook/new">
               <Button className="gap-2">
                 <Plus className="h-4 w-4" />
-                New Worksheet
+                New Workbook
               </Button>
             </Link>
             <Link href="/analytics/canvas/new">
@@ -325,20 +325,26 @@ export function AnalyticsHome() {
                 New Canvas
               </Button>
             </Link>
+            <Link href="/analytics/reports">
+              <Button variant="outline" className="gap-2">
+                <FileText className="h-4 w-4" />
+                Reports
+              </Button>
+            </Link>
           </div>
         </div>
 
         {/* AI Command Bar */}
         <AICommandBar />
 
-        {/* Worksheets */}
+        {/* Workbooks */}
         <section>
           <SectionHeader
             icon={BarChart2}
             iconColor="#10b981"
-            title="Worksheets"
+            title="Workbooks"
             count={wsHydrated ? worksheets.length : 0}
-            href="/analytics/worksheet/new"
+            href="/analytics/workbook/new"
             addLabel="New"
           />
           {!wsHydrated ? (
@@ -346,9 +352,9 @@ export function AnalyticsHome() {
           ) : worksheets.length === 0 ? (
             <EmptyState
               icon={BarChart2}
-              message="No worksheets yet — upload a dataset and build your first chart."
-              href="/analytics/worksheet/new"
-              label="Create worksheet"
+              message="No workbooks yet — upload a dataset and build your first chart."
+              href="/analytics/workbook/new"
+              label="Create workbook"
             />
           ) : (
             <>
@@ -377,7 +383,7 @@ export function AnalyticsHome() {
           ) : canvases.length === 0 ? (
             <EmptyState
               icon={LayoutDashboard}
-              message="No canvases yet — combine worksheets into a shareable dashboard."
+              message="No canvases yet — combine workbook sheets into a shareable dashboard."
               href="/analytics/canvas/new"
               label="Create canvas"
               variant="outline"
@@ -405,7 +411,7 @@ export function AnalyticsHome() {
                   {ownDatasets.length}
                 </span>
               </div>
-              <Link href="/analytics/worksheet/new">
+              <Link href="/analytics/workbook/new">
                 <Button size="sm" variant="ghost" className="gap-1.5 text-xs text-muted-foreground h-7">
                   <Plus className="h-3.5 w-3.5" />
                   Add Dataset
@@ -415,8 +421,8 @@ export function AnalyticsHome() {
             {ownDatasets.length === 0 ? (
               <EmptyState
                 icon={Database}
-                message="No datasets yet — upload a file to start building worksheets."
-                href="/analytics/worksheet/new"
+                message="No datasets yet — upload a file to start building workbooks."
+                href="/analytics/workbook/new"
                 label="Upload dataset"
               />
             ) : (

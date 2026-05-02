@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { DatasetField, ActiveGlobalFilters, DateRangeValue, GlobalFilterValue, NumericRangeValue, FieldType, isNumericType, isDateType } from "@/types";
+import { DatasetField, ActiveGlobalFilters, ActiveSmartFilters, DateRangeValue, GlobalFilterValue, NumericRangeValue, FieldType, isNumericType, isDateType } from "@/types";
 import { isNumericRange, isDateRange, hasActiveFilterValue } from "@/lib/data/filters";
-import { SlidersHorizontal, Plus, X } from "lucide-react";
+import { getDatasetSmartFilterMap } from "@/lib/data/smart-filters";
+import { SlidersHorizontal, Plus, X, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CanvasFilterDrawer } from "./CanvasFilterDrawer";
 
@@ -15,6 +16,9 @@ export interface CanvasFilterBarProps {
   onClearAll: () => void;
   fieldWidgetCounts?: Record<string, number>;
   dashboardId?: string;
+  /** Smart analytical filter state */
+  activeSmartFilters?: ActiveSmartFilters;
+  onSmartFiltersChange?: (ids: ActiveSmartFilters) => void;
 }
 
 // ── Chip label ────────────────────────────────────────────────────
@@ -63,13 +67,16 @@ export function CanvasFilterBar({
   onClearAll,
   fieldWidgetCounts,
   dashboardId,
+  activeSmartFilters = [],
+  onSmartFiltersChange,
 }: CanvasFilterBarProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const smartFilterMap = getDatasetSmartFilterMap(canvasFields);
 
   const activeEntries = canvasFields.filter((f) =>
     hasActiveFilterValue(activeFilters[f.name])
   );
-  const hasActive = activeEntries.length > 0;
+  const hasActive = activeEntries.length > 0 || activeSmartFilters.length > 0;
 
   if (canvasFields.length === 0) return null;
 
@@ -95,6 +102,31 @@ export function CanvasFilterBar({
                   onClick={(e) => {
                     e.stopPropagation();
                     onFilterChange(f.name, clearValue(f.type));
+                  }}
+                  className="flex items-center hover:opacity-60 transition-opacity"
+                >
+                  <X className="h-3 w-3" />
+                </span>
+              </button>
+            );
+          })}
+
+          {/* Smart filter chips */}
+          {activeSmartFilters.map((sfId) => {
+            const def = smartFilterMap.get(sfId);
+            return (
+              <button
+                key={`smart-${sfId}`}
+                onClick={() => setDrawerOpen(true)}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-xs font-medium hover:bg-amber-100 transition-colors"
+              >
+                <Sparkles className="h-3 w-3 shrink-0" />
+                <span>{def?.label ?? sfId}</span>
+                <span
+                  role="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSmartFiltersChange?.(activeSmartFilters.filter((id) => id !== sfId));
                   }}
                   className="flex items-center hover:opacity-60 transition-opacity"
                 >
@@ -140,10 +172,13 @@ export function CanvasFilterBar({
         onFilterChange={onFilterChange}
         onClearAll={() => {
           onClearAll();
+          onSmartFiltersChange?.([]);
           setDrawerOpen(false);
         }}
         fieldWidgetCounts={fieldWidgetCounts}
         dashboardId={dashboardId}
+        activeSmartFilters={activeSmartFilters}
+        onSmartFiltersChange={onSmartFiltersChange}
       />
     </>
   );

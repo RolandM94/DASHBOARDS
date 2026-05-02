@@ -1,24 +1,27 @@
-import * as XLSX from "xlsx";
+import writeXlsxFile from "write-excel-file/browser";
 
 /**
  * Exports an array of row objects to an `.xlsx` file and triggers a browser
- * download. Uses SheetJS (xlsx) — zero additional runtime deps beyond the
- * package already in node_modules.
+ * download.
  *
  * @param data       Array of plain objects (keys become column headers)
  * @param filename   Download filename without extension
  * @param sheetName  Optional worksheet tab name (defaults to "Data")
  */
-export function exportAsXLSX(
+export async function exportAsXLSX(
   data: Record<string, string | number>[],
   filename: string,
   sheetName?: string
-): void {
+): Promise<void> {
   if (!data.length) return;
-  const ws = XLSX.utils.json_to_sheet(data);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, (sheetName ?? "Data").slice(0, 31));
-  XLSX.writeFile(wb, `${sanitizeFilename(filename)}.xlsx`);
+  const headers = Array.from(new Set(data.flatMap((row) => Object.keys(row))));
+  await writeXlsxFile(
+    [
+      headers.map((header) => ({ value: header, fontWeight: "bold" as const })),
+      ...data.map((row) => headers.map((header) => row[header] ?? "")),
+    ],
+    { sheet: (sheetName ?? "Data").slice(0, 31) }
+  ).toFile(`${sanitizeFilename(filename)}.xlsx`);
 }
 
 /**

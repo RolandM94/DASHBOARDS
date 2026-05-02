@@ -4,17 +4,19 @@ import { useState, useRef, useLayoutEffect, useEffect, useMemo } from "react";
 import {
   ActiveGlobalFilters, CanvasBlock, FilterBlockConfig,
   GlobalFilterValue, GridLayoutItem, PublishedDashboard,
-  TextBlockConfig, WidgetBlockConfig, DatasetPreviewBlockConfig, BlockType, ResolvedChartData,
+  TextBlockConfig, WidgetBlockConfig, DatasetPreviewBlockConfig, BlockType, ResolvedChartData, ActiveSmartFilters,
 } from "@/types";
 import { useWorksheetStore } from "@/store/worksheetStore";
 import { FilterBlockView } from "@/components/analytics/canvas/FilterBlockView";
 import { CanvasFilterBar } from "@/components/analytics/canvas/CanvasFilterBar";
 import { getCanvasFields, getFieldWidgetCounts, splitFiltersForApi, encodeFiltersParam, decodeFiltersParam, hasActiveFilterValue } from "@/lib/data/filters";
+import { getWorkbookSheet } from "@/lib/workbook";
 import { ChartRenderer } from "@/components/shared/charts/ChartRenderer";
 import { Button } from "@/components/ui/button";
-import { Globe, Lock, Building2, Link2, Check, BarChart2, Loader2, Info, RefreshCw, X, FileDown, Sheet, Sparkles } from "lucide-react";
+import { Globe, Lock, Building2, Link2, Check, BarChart2, Loader2, Info, RefreshCw, X, FileDown, Sheet, Sparkles, FileText } from "lucide-react";
 import { exportAsXLSX } from "@/lib/utils/export";
 import { ReactGridLayout, WidthProvider } from "react-grid-layout/legacy";
+import Link from "next/link";
 
 const GridLayout = WidthProvider(ReactGridLayout);
 const ROW_HEIGHT = 30;
@@ -50,6 +52,16 @@ function makeDefaultItem(id: string, type: BlockType, x: number, y: number): Gri
   return                         { i: id, x, y, w: 6,  h: 3,  minW: 2, minH: 2 };
 }
 
+function smartFiltersForApi(activeSmartFilters: ActiveSmartFilters) {
+  return activeSmartFilters.map((id) => ({
+    id: `smart-${id}`,
+    field: "_smart",
+    operator: "equals" as const,
+    value: id,
+    label: "Smart Filter",
+  }));
+}
+
 // ── AutoSizer ─────────────────────────────────────────────────────
 
 function AutoSizer({ children }: { children: (height: number) => React.ReactNode }) {
@@ -78,10 +90,11 @@ const permissionLabel = { private: "Private", org: "Organisation", public: "Publ
 // ── Read-only widget ──────────────────────────────────────────────
 
 function ReadOnlyWidget({
-  block, activeFilters, dashboardId, onDataCountChange, onChartDataChange, refreshKey,
+  block, activeFilters, activeSmartFilters, dashboardId, onDataCountChange, onChartDataChange, refreshKey,
 }: {
   block: WidgetBlockConfig;
   activeFilters: ActiveGlobalFilters;
+  activeSmartFilters: ActiveSmartFilters;
   dashboardId: string;
   onDataCountChange?: (count: number) => void;
   onChartDataChange?: (data: ResolvedChartData | null) => void;
@@ -89,18 +102,37 @@ function ReadOnlyWidget({
 }) {
   const worksheet = useWorksheetStore((s) => s.getWorksheetById(block.worksheetId));
   const dataset   = useWorksheetStore((s) => worksheet ? s.getDatasetById(worksheet.datasetId) : undefined);
+  const sheet = useMemo(
+    () => worksheet ? getWorkbookSheet(worksheet, block.sheetId) : null,
+    [worksheet, block.sheetId]
+  );
   const [chartData, setChartData] = useState<ResolvedChartData | null>(null);
   const [fetching, setFetching]   = useState(false);
-  const abortRef = useRef<AbortController | null>(null);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const requestSeq = useRef(0);
+  const sheetKey = useMemo(() => {
+    if (!sheet) return "";
+    return JSON.stringify({
+      metrics: sheet.metrics,
+      dimensions: sheet.dimensions,
+      filters: sheet.filters ?? [],
+      sort: sheet.sort ?? "natural",
+      chartType: sheet.chartType,
+      logScale: sheet.logScale ?? false,
+    });
+  }, [sheet]);
+  const activeFiltersKey = useMemo(() => JSON.stringify(activeFilters), [activeFilters]);
+  const activeSmartFiltersKey = useMemo(() => JSON.stringify(activeSmartFilters), [activeSmartFilters]);
 
   useEffect(() => {
-    if (!worksheet || !dataset) return;
-    if (worksheet.config.metrics.length === 0) { setChartData(null); return; }
+    if (!worksheet || !dataset || !sheet) return;
+    if (sheet.metrics.length === 0) { setChartData(null); setFetchError(null); return; }
 
-    if (abortRef.current) abortRef.current.abort();
-    const ctrl = new AbortController();
-    abortRef.current = ctrl;
+    const seq = requestSeq.current + 1;
+    requestSeq.current = seq;
     setFetching(true);
+    setFetchError(null);
+    setChartData(null);
 
     const { cleanGlobalFilters, extraFilters } = splitFiltersForApi(activeFilters);
 
@@ -109,23 +141,32 @@ function ReadOnlyWidget({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         datasetId: dataset.id,
-        metrics: worksheet.config.metrics,
-        dimensions: worksheet.config.dimensions,
-        worksheetFilters: [...(worksheet.config.filters ?? []), ...extraFilters],
+        metrics: sheet.metrics,
+        dimensions: sheet.dimensions,
+        worksheetFilters: [...(sheet.filters ?? []), ...extraFilters, ...smartFiltersForApi(activeSmartFilters)],
         globalFilters: cleanGlobalFilters,
-        sort: worksheet.config.sort ?? "natural",
+        sort: sheet.sort ?? "natural",
         dashboardId,
       }),
-      signal: ctrl.signal,
     })
-      .then((r) => r.ok ? r.json() : null)
-      .then((d) => setChartData(d))
-      .catch(() => setChartData(null))
-      .finally(() => setFetching(false));
-
-    return () => ctrl.abort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [worksheet, dataset, activeFilters, dashboardId, refreshKey]);
+      .then(async (r) => {
+        if (r.ok) return r.json();
+        const body = await r.json().catch(() => ({})) as { error?: string };
+        throw new Error(body.error ?? `Aggregate request failed (${r.status})`);
+      })
+      .then((d) => {
+        if (requestSeq.current !== seq) return;
+        setChartData(d);
+      })
+      .catch((err) => {
+        if (requestSeq.current !== seq) return;
+        setChartData(null);
+        setFetchError(err instanceof Error ? err.message : "Failed to load chart data");
+      })
+      .finally(() => {
+        if (requestSeq.current === seq) setFetching(false);
+      });
+  }, [worksheet, dataset, sheet, sheetKey, activeFilters, activeFiltersKey, activeSmartFilters, activeSmartFiltersKey, dashboardId, refreshKey]);
 
   useEffect(() => {
     onDataCountChange?.(chartData ? chartData.data.length : 0);
@@ -137,7 +178,13 @@ function ReadOnlyWidget({
 
   if (!worksheet) return (
     <div className="flex items-center justify-center h-full text-sm text-muted-foreground px-4">
-      Worksheet not found
+      Workbook not found
+    </div>
+  );
+
+  if (!sheet) return (
+    <div className="flex items-center justify-center h-full text-sm text-muted-foreground px-4">
+      Sheet not found
     </div>
   );
 
@@ -149,7 +196,7 @@ function ReadOnlyWidget({
 
   if (!chartData) return (
     <div className="flex items-center justify-center h-full text-sm text-gray-400 px-4">
-      {worksheet.config.metrics.length === 0 ? "No metrics configured" : "No data"}
+      {fetchError ?? (sheet.metrics.length === 0 ? "No metrics configured" : "No data")}
     </div>
   );
 
@@ -159,9 +206,9 @@ function ReadOnlyWidget({
         {(h) => (
           <ChartRenderer
             chartData={chartData}
-            chartType={worksheet.config.chartType}
+            chartType={sheet.chartType}
             height={Math.max(h - 4, 80)}
-            logScale={worksheet.config.logScale}
+            logScale={sheet.logScale}
           />
         )}
       </AutoSizer>
@@ -281,11 +328,12 @@ const CARD_SHADOW = "0px 0px 5px 0px rgba(0,0,0,.02), 0px 2px 10px 0px rgba(0,0,
 // ── Read-only widget card ─────────────────────────────────────────
 
 function ReadOnlyWidgetCard({
-  block, title, activeFilters, onFilterChange, dashboardId,
+  block, title, activeFilters, activeSmartFilters, onFilterChange, dashboardId,
 }: {
   block: WidgetBlockConfig;
   title: string;
   activeFilters: ActiveGlobalFilters;
+  activeSmartFilters: ActiveSmartFilters;
   onFilterChange: (field: string, value: GlobalFilterValue) => void;
   dashboardId: string;
 }) {
@@ -309,7 +357,7 @@ function ReadOnlyWidgetCard({
       const res = await fetch("/api/ai/explain", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ worksheetId: block.worksheetId, canvasId: dashboardId }),
+        body: JSON.stringify({ worksheetId: block.worksheetId, sheetId: block.sheetId, canvasId: dashboardId }),
       });
       const data = await res.json();
       setExplanation(res.ok ? (data.explanation ?? "") : (data.error ?? "Could not generate explanation"));
@@ -427,6 +475,7 @@ function ReadOnlyWidgetCard({
         <ReadOnlyWidget
           block={block}
           activeFilters={activeFilters}
+          activeSmartFilters={activeSmartFilters}
           dashboardId={dashboardId}
           onDataCountChange={setDataCount}
           onChartDataChange={setWidgetData}
@@ -440,11 +489,12 @@ function ReadOnlyWidgetCard({
 // ── Shared block card ─────────────────────────────────────────────
 
 function BlockCard({
-  block, title, activeFilters, onFilterChange, dashboardId, datasetIds,
+  block, title, activeFilters, activeSmartFilters, onFilterChange, dashboardId, datasetIds,
 }: {
   block: CanvasBlock;
   title: string;
   activeFilters: ActiveGlobalFilters;
+  activeSmartFilters: ActiveSmartFilters;
   onFilterChange: (field: string, value: GlobalFilterValue) => void;
   dashboardId: string;
   datasetIds: string[];
@@ -455,6 +505,7 @@ function BlockCard({
         block={block as WidgetBlockConfig}
         title={title}
         activeFilters={activeFilters}
+        activeSmartFilters={activeSmartFilters}
         onFilterChange={onFilterChange}
         dashboardId={dashboardId}
       />
@@ -502,11 +553,12 @@ const MOBILE_HEIGHTS: Record<BlockType, number> = {
 // ── Mobile stacked layout ─────────────────────────────────────────
 
 function MobileStack({
-  blocks, blockTitle, activeFilters, onFilterChange, dashboardId, datasetIds,
+  blocks, blockTitle, activeFilters, activeSmartFilters, onFilterChange, dashboardId, datasetIds,
 }: {
   blocks: CanvasBlock[];
   blockTitle: (b: CanvasBlock) => string;
   activeFilters: ActiveGlobalFilters;
+  activeSmartFilters: ActiveSmartFilters;
   onFilterChange: (field: string, value: GlobalFilterValue) => void;
   dashboardId: string;
   datasetIds: string[];
@@ -519,6 +571,7 @@ function MobileStack({
             block={block}
             title={blockTitle(block)}
             activeFilters={activeFilters}
+            activeSmartFilters={activeSmartFilters}
             onFilterChange={onFilterChange}
             dashboardId={dashboardId}
             datasetIds={datasetIds}
@@ -538,6 +591,7 @@ interface Props {
 export function DashboardView({ dashboard }: Props) {
   const isMobile = useIsMobile();
   const [activeFilters, setActiveFilters] = useState<ActiveGlobalFilters>({});
+  const [activeSmartFilters, setActiveSmartFilters] = useState<ActiveSmartFilters>([]);
   const [copied, setCopied] = useState(false);
   const [mounted, setMounted] = useState(false);
 
@@ -547,6 +601,15 @@ export function DashboardView({ dashboard }: Props) {
     const params = new URLSearchParams(window.location.search);
     const restored = decodeFiltersParam(params.get("filters"));
     if (Object.keys(restored).length > 0) setActiveFilters(restored);
+    const smart = params.get("smartFilters");
+    if (smart) {
+      try {
+        const parsed = JSON.parse(smart);
+        if (Array.isArray(parsed)) setActiveSmartFilters(parsed.filter((id) => typeof id === "string"));
+      } catch {
+        // Ignore malformed URL state.
+      }
+    }
   }, []);
 
   // ── Sync active filters → URL ─────────────────────────────────────
@@ -559,10 +622,15 @@ export function DashboardView({ dashboard }: Props) {
     } else {
       params.delete("filters");
     }
+    if (activeSmartFilters.length > 0) {
+      params.set("smartFilters", JSON.stringify(activeSmartFilters));
+    } else {
+      params.delete("smartFilters");
+    }
     const search = params.toString();
     const newUrl = window.location.pathname + (search ? `?${search}` : "");
     window.history.replaceState(null, "", newUrl);
-  }, [activeFilters, mounted]);
+  }, [activeFilters, activeSmartFilters, mounted]);
 
   const { getWorksheetById, getDatasetById } = useWorksheetStore();
 
@@ -601,7 +669,8 @@ export function DashboardView({ dashboard }: Props) {
   function blockTitle(block: CanvasBlock): string {
     if (block.type === "widget") {
       const ws = getWorksheetById((block as WidgetBlockConfig).worksheetId);
-      return (block as WidgetBlockConfig).title ?? ws?.name ?? "Widget";
+      const sheet = ws ? getWorkbookSheet(ws, (block as WidgetBlockConfig).sheetId) : null;
+      return (block as WidgetBlockConfig).title ?? sheet?.name ?? ws?.name ?? "Widget";
     }
     if (block.type === "text") return (block as TextBlockConfig).worksheetId ? "AI Insight" : "Text";
     if (block.type === "preview") return "Dataset Preview";
@@ -619,7 +688,7 @@ export function DashboardView({ dashboard }: Props) {
   }
 
   const PermIcon = permissionIcon[dashboard.permission];
-  const hasActiveFilters = Object.values(activeFilters).some(hasActiveFilterValue);
+  const hasActiveFilters = Object.values(activeFilters).some(hasActiveFilterValue) || activeSmartFilters.length > 0;
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
@@ -659,7 +728,10 @@ export function DashboardView({ dashboard }: Props) {
                 variant="ghost"
                 size="sm"
                 className="text-xs text-muted-foreground hidden sm:flex"
-                onClick={() => setActiveFilters({})}
+                onClick={() => {
+                  setActiveFilters({});
+                  setActiveSmartFilters([]);
+                }}
               >
                 Clear filters
               </Button>
@@ -668,6 +740,12 @@ export function DashboardView({ dashboard }: Props) {
               <FileDown className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Export PDF</span>
             </Button>
+            <Link href={`/analytics/reports?sourceType=dashboard&sourceId=${dashboard.id}`}>
+              <Button variant="outline" size="sm" className="gap-1.5 text-xs h-8 px-2.5 sm:px-3">
+                <FileText className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Report</span>
+              </Button>
+            </Link>
             <Button variant="outline" size="sm" onClick={copyLink} className="gap-1.5 text-xs h-8 px-2.5 sm:px-3">
               {copied
                 ? <Check className="h-3.5 w-3.5 text-green-600" />
@@ -686,9 +764,14 @@ export function DashboardView({ dashboard }: Props) {
               datasetIds={datasetIds}
               activeFilters={activeFilters}
               onFilterChange={handleFilterChange}
-              onClearAll={() => setActiveFilters({})}
+              onClearAll={() => {
+                setActiveFilters({});
+                setActiveSmartFilters([]);
+              }}
               fieldWidgetCounts={fieldWidgetCounts}
               dashboardId={dashboard.id}
+              activeSmartFilters={activeSmartFilters}
+              onSmartFiltersChange={setActiveSmartFilters}
             />
           </div>
         )}
@@ -705,6 +788,7 @@ export function DashboardView({ dashboard }: Props) {
             blocks={dashboard.blocks}
             blockTitle={blockTitle}
             activeFilters={activeFilters}
+            activeSmartFilters={activeSmartFilters}
             onFilterChange={handleFilterChange}
             dashboardId={dashboard.id}
             datasetIds={datasetIds}
@@ -725,6 +809,7 @@ export function DashboardView({ dashboard }: Props) {
                   block={block}
                   title={blockTitle(block)}
                   activeFilters={activeFilters}
+                  activeSmartFilters={activeSmartFilters}
                   onFilterChange={handleFilterChange}
                   dashboardId={dashboard.id}
                   datasetIds={datasetIds}

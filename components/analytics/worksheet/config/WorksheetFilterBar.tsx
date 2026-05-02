@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { DatasetField, Filter, FilterOperator, isNumericType, isDateType } from "@/types";
-import { SlidersHorizontal, Plus, X } from "lucide-react";
+import { DatasetField, Filter, ActiveSmartFilters, isNumericType, isDateType } from "@/types";
+import { SlidersHorizontal, Plus, X, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { WorksheetFilterDrawer } from "./WorksheetFilterDrawer";
+import { getDatasetSmartFilterMap } from "@/lib/data/smart-filters";
 import { generateId } from "@/lib/utils/ids";
 
 interface WorksheetFilterBarProps {
@@ -12,6 +13,9 @@ interface WorksheetFilterBarProps {
   fields: DatasetField[];
   datasetId: string;
   onChange: (filters: Filter[]) => void;
+  /** Smart analytical filter state */
+  activeSmartFilters?: ActiveSmartFilters;
+  onSmartFiltersChange?: (ids: ActiveSmartFilters) => void;
 }
 
 // ── Derive active fields and build chip labels ────────────────────
@@ -72,11 +76,30 @@ export function WorksheetFilterBar({
   fields,
   datasetId,
   onChange,
+  activeSmartFilters,
+  onSmartFiltersChange,
 }: WorksheetFilterBarProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const smartFilterMap = getDatasetSmartFilterMap(fields);
+  const smartFilterIds = activeSmartFilters ?? filters
+    .filter((f) => f.field === "_smart" && typeof f.value === "string")
+    .map((f) => f.value as string);
+  const updateSmartFilters = onSmartFiltersChange ?? ((ids: ActiveSmartFilters) => {
+    const regularFilters = filters.filter((f) => f.field !== "_smart");
+    onChange([
+      ...regularFilters,
+      ...ids.map((id) => ({
+        id: generateId(),
+        field: "_smart",
+        operator: "equals" as const,
+        value: id,
+        label: smartFilterMap.get(id)?.label ?? "Smart Filter",
+      })),
+    ]);
+  });
 
   const activeFields = getActiveFields(fields, filters);
-  const hasActive = activeFields.length > 0;
+  const hasActive = activeFields.length > 0 || smartFilterIds.length > 0;
 
   if (fields.length === 0) return null;
 
@@ -107,6 +130,31 @@ export function WorksheetFilterBar({
               </span>
             </button>
           ))}
+
+          {/* Smart filter chips */}
+          {smartFilterIds.map((sfId) => {
+            const def = smartFilterMap.get(sfId);
+            return (
+              <button
+                key={`smart-${sfId}`}
+                onClick={() => setDrawerOpen(true)}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-xs font-medium hover:bg-amber-100 transition-colors"
+              >
+                <Sparkles className="h-3 w-3 shrink-0" />
+                <span>{def?.label ?? sfId}</span>
+                <span
+                  role="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    updateSmartFilters(smartFilterIds.filter((id) => id !== sfId));
+                  }}
+                  className="flex items-center hover:opacity-60 transition-opacity"
+                >
+                  <X className="h-3 w-3" />
+                </span>
+              </button>
+            );
+          })}
 
           {/* Add Filter button */}
           <button
@@ -142,6 +190,8 @@ export function WorksheetFilterBar({
         fields={fields}
         datasetId={datasetId}
         onChange={onChange}
+        activeSmartFilters={smartFilterIds}
+        onSmartFiltersChange={updateSmartFilters}
       />
     </>
   );

@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { DatasetField, ActiveGlobalFilters, DateRangeValue, GlobalFilterValue, NumericRangeValue, isNumericType, isDateType } from "@/types";
+import { DatasetField, ActiveGlobalFilters, ActiveSmartFilters, DateRangeValue, GlobalFilterValue, NumericRangeValue, isNumericType, isDateType } from "@/types";
 import { isNumericRange, isDateRange, groupFieldsByCategory } from "@/lib/data/filters";
+import { getDatasetSmartFilters } from "@/lib/data/smart-filters";
 import { Accordion } from "@base-ui/react/accordion";
 import { Slider } from "@base-ui/react/slider";
-import { X, ChevronDown, Search, Check, Loader2 } from "lucide-react";
+import { X, ChevronDown, Search, Check, Loader2, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // ── Date presets ──────────────────────────────────────────────────
@@ -331,6 +332,9 @@ export interface CanvasFilterDrawerProps {
   onClearAll: () => void;
   fieldWidgetCounts?: Record<string, number>;
   dashboardId?: string;
+  /** Smart analytical filter state */
+  activeSmartFilters?: ActiveSmartFilters;
+  onSmartFiltersChange?: (ids: ActiveSmartFilters) => void;
 }
 
 export function CanvasFilterDrawer({
@@ -343,6 +347,8 @@ export function CanvasFilterDrawer({
   onClearAll,
   fieldWidgetCounts,
   dashboardId,
+  activeSmartFilters = [],
+  onSmartFiltersChange,
 }: CanvasFilterDrawerProps) {
   const [fieldValues, setFieldValues] = useState<Record<string, string[]>>({});
   const [loadingValues, setLoadingValues] = useState<string | null>(null);
@@ -351,7 +357,8 @@ export function CanvasFilterDrawer({
   const [fieldSearch, setFieldSearch] = useState<Record<string, string>>({});
 
   const groupedFields = groupFieldsByCategory(fields);
-  const activeCount = fields.filter((f) => hasActiveValue(activeFilters[f.name])).length;
+  const smartFilters = getDatasetSmartFilters(fields);
+  const activeCount = fields.filter((f) => hasActiveValue(activeFilters[f.name])).length + activeSmartFilters.length;
 
   // ── Fetch min/max for all number fields when drawer opens ─────────
   useEffect(() => {
@@ -477,7 +484,72 @@ export function CanvasFilterDrawer({
 
         {/* Accordion body */}
         <div className="flex-1 overflow-y-auto">
-          {groupedFields.length === 0 ? (
+          {/* ── Smart Filters section ──────────────────────────────── */}
+          {smartFilters.length > 0 && onSmartFiltersChange && (
+            <div className="border-b border-gray-100">
+              <Accordion.Root
+                multiple
+                defaultValue={activeSmartFilters.length > 0 ? ["smart-filters"] : []}
+              >
+                <Accordion.Item value="smart-filters" className="border-0">
+                  <Accordion.Header className="flex">
+                    <Accordion.Trigger className="flex flex-1 items-center justify-between px-5 py-3.5 text-sm font-medium text-gray-700 hover:bg-muted/40 transition-colors group data-[panel-open]:text-gray-900">
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="h-3.5 w-3.5 text-amber-500" />
+                        <span>Smart Filters</span>
+                        {activeSmartFilters.length > 0 && (
+                          <span className="text-[10px] bg-amber-500 text-white px-1.5 py-0.5 rounded-full font-bold leading-none">
+                            {activeSmartFilters.length}
+                          </span>
+                        )}
+                      </div>
+                      <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform duration-200 group-data-[panel-open]:rotate-180" />
+                    </Accordion.Trigger>
+                  </Accordion.Header>
+                  <Accordion.Panel className="px-5 pb-5 pt-1 space-y-1 overflow-hidden">
+                    {smartFilters.map((sf) => {
+                      const isActive = activeSmartFilters.includes(sf.id);
+                      return (
+                        <button
+                          key={sf.id}
+                          onClick={() => {
+                            const next = isActive
+                              ? activeSmartFilters.filter((id) => id !== sf.id)
+                              : [...activeSmartFilters, sf.id];
+                            onSmartFiltersChange(next);
+                          }}
+                          className="w-full flex items-center gap-2.5 px-2 py-2 rounded-md hover:bg-muted text-left transition-colors"
+                        >
+                          <div
+                            className={cn(
+                              "h-3.5 w-3.5 rounded border flex items-center justify-center shrink-0 transition-colors",
+                              isActive
+                                ? "bg-amber-500 border-amber-500"
+                                : "border-gray-300"
+                            )}
+                          >
+                            {isActive && (
+                              <Check className="h-2.5 w-2.5 text-white" />
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs font-medium text-gray-700 truncate">
+                              {sf.label}
+                            </p>
+                            <p className="text-[10px] text-muted-foreground/70 leading-tight">
+                              {sf.description}
+                            </p>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </Accordion.Panel>
+                </Accordion.Item>
+              </Accordion.Root>
+            </div>
+          )}
+
+          {groupedFields.length === 0 && smartFilters.length === 0 ? (
             <p className="text-xs text-muted-foreground text-center py-10">
               No filterable fields
             </p>

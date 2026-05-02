@@ -21,7 +21,7 @@ export function DataLoader() {
       try {
         const [datasetsRes, worksheetsRes, canvasesRes] = await Promise.all([
           fetch("/api/datasets"),
-          fetch("/api/worksheets"),
+          fetch("/api/workbooks"),
           fetch("/api/canvases"),
         ]);
 

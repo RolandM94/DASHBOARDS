@@ -2,7 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-// PATCH /api/worksheets/[id] — update worksheet name / description / config / status
+// PATCH /api/worksheets/[id] — update workbook name / description / config / status
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }

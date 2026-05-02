@@ -29,6 +29,8 @@ const COLORS = [
 const MIN_PX_PER_BAR = 80;   // wider so -45° labels fit within each bar's slot
 const MIN_PX_PER_POINT = 52;
 const SCROLL_THRESHOLD = 10; // start scrolling sooner to keep bars spacious
+const STRAIGHT_X_AXIS_HEIGHT = 48;
+const ANGLED_X_AXIS_HEIGHT = 132;
 
 // Extra right margin so angled X-axis labels at the right edge are never clipped.
 const CHART_MARGIN        = { top: 12,  right: 44, bottom: 0, left: 4 };
@@ -70,13 +72,13 @@ function CompoundXTick({ x, y, payload }: { x?: number; y?: number; payload?: { 
   return (
     <g transform={`translate(${x},${y})`}>
       <text
-        x={0} y={0} dy={12}
+        x={0} y={0} dy={14}
         textAnchor="end"
         transform="rotate(-45)"
         fill="#6b7280"
         fontSize={11}
       >
-        {truncate(label, 22)}
+        {truncate(label, 28)}
       </text>
     </g>
   );
@@ -117,17 +119,41 @@ interface Props {
 }
 
 function ScrollableChart({
-  children, dataLength, minPxPerPoint, height,
+  children, dataLength, minPxPerPoint, height, yAxisWidth,
 }: {
-  children: (width: number) => React.ReactNode;
+  children: (width: number, mode: "full" | "yAxisOnly" | "noYAxis") => React.ReactNode;
   dataLength: number; minPxPerPoint: number; height: number;
+  yAxisWidth: number;
 }) {
   const needsScroll = dataLength > SCROLL_THRESHOLD;
   const computedWidth = needsScroll ? Math.max(dataLength * minPxPerPoint, 600) : undefined;
+
+  if (!needsScroll) {
+    return (
+      <div style={{ height }}>
+        {children(0, "full")}
+      </div>
+    );
+  }
+
+  const totalWidth = yAxisWidth + computedWidth!;
+
   return (
-    <div className="w-full max-w-full min-w-0 h-full overflow-x-auto overflow-y-hidden" style={{ height }}>
-      <div style={{ width: computedWidth ?? "100%", height, minWidth: "100%", maxWidth: computedWidth ? undefined : "100%" }}>
-        {children(computedWidth ?? 0)}
+    <div style={{ overflowX: "auto", height, background: "white" }}>
+      <div style={{ display: "flex", width: totalWidth, height, minWidth: "100%" }}>
+        {/* Sticky Y-axis column — remains fixed at left while scrolled right */}
+        <div style={{
+          width: yAxisWidth, flexShrink: 0, position: "sticky", left: 0, zIndex: 10,
+          background: "white",
+          boxShadow: "2px 0 6px -2px rgba(0,0,0,0.06)",
+        }}>
+          {children(yAxisWidth, "yAxisOnly")}
+        </div>
+
+        {/* Scrollable chart body — bars, X-axis, tooltip, legend */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {children(computedWidth!, "noYAxis")}
+        </div>
       </div>
     </div>
   );
@@ -143,13 +169,15 @@ function ScrollableChart({
 function prepareLogData(
   data: ResolvedChartData["data"],
   yKeys: string[],
-): { clampedData: ResolvedChartData["data"]; domainMin: number } {
+): { clampedData: ResolvedChartData["data"]; domainMin: number; domainMax: number } {
   // Find smallest positive value
   let minPositive = Infinity;
+  let maxPositive = 0;
   for (const row of data) {
     for (const key of yKeys) {
       const v = Number(row[key]);
       if (isFinite(v) && v > 0 && v < minPositive) minPositive = v;
+      if (isFinite(v) && v > 0 && v > maxPositive) maxPositive = v;
     }
   }
 
@@ -157,6 +185,7 @@ function prepareLogData(
   const logFloor = isFinite(minPositive) ? Math.floor(Math.log10(minPositive)) : -2;
   // One decade below the smallest positive value → gives visual padding at bottom
   const domainMin = Math.pow(10, logFloor - 1);
+  const domainMax = Math.max(domainMin * 10, maxPositive * 1.08);
 
   const clampedData = data.map((row) => {
     const patched: typeof row = { ...row };
@@ -167,7 +196,18 @@ function prepareLogData(
     return patched;
   });
 
-  return { clampedData, domainMin };
+  return { clampedData, domainMin, domainMax };
+}
+
+function getLinearDomainMax(data: ResolvedChartData["data"], yKeys: string[]): number {
+  let max = 0;
+  for (const row of data) {
+    for (const key of yKeys) {
+      const value = Number(row[key]);
+      if (isFinite(value) && value > max) max = value;
+    }
+  }
+  return max > 0 ? max * 1.08 : 1;
 }
 
 function numericFormatter(v: number): string {
@@ -208,10 +248,11 @@ function makeCategoricalBarShape(seriesColor: string | null) {
   };
 }
 
-function makeYAxisProps(logScale: boolean, yAxisLabel: string, domainMin = 0) {
+function makeYAxisProps(logScale: boolean, yAxisLabel: string, domainMin: number, domainMax: number) {
   return {
+    axisKey: `${logScale ? "log" : "linear"}-${domainMin}-${domainMax}`,
     scale: (logScale ? "log" : "auto") as "log" | "auto",
-    domain: logScale ? ([domainMin, "auto"] as [number, string]) : ([0, "auto"] as [number, string]),
+    domain: logScale ? ([domainMin, domainMax] as [number, number]) : ([0, domainMax] as [number, number]),
     allowDataOverflow: logScale,
     tick: { fontSize: 11, fill: "#6b7280" },
     tickLine: false,
@@ -270,8 +311,6 @@ function PieActiveShape({
   );
 }
 
-const MAX_PIE_SLICES = 9;
-
 function PieChartRenderer({
   data, xKey, yKeys, height,
 }: {
@@ -290,22 +329,7 @@ function PieChartRenderer({
 
   const total = raw.reduce((s, d) => s + d.value, 0);
 
-  // Group tail slices into "Others"
-  let slices: Array<{ name: string; value: number; fill: string }>;
-  if (raw.length <= MAX_PIE_SLICES) {
-    slices = raw;
-  } else {
-    const top = raw.slice(0, MAX_PIE_SLICES);
-    const rest = raw.slice(MAX_PIE_SLICES);
-    slices = [
-      ...top,
-      {
-        name: `Others (${rest.length})`,
-        value: rest.reduce((s, d) => s + d.value, 0),
-        fill: "#e2e8f0",
-      },
-    ];
-  }
+  const slices = raw;
 
   if (slices.length === 0) {
     return (
@@ -414,9 +438,9 @@ function PieChartRenderer({
 
 export function ChartRenderer({ chartData, chartType, height = 320, logScale = false }: Props) {
   const { xKey, yKeys } = chartData;
-  const { clampedData, domainMin } = logScale
+  const { clampedData, domainMin, domainMax } = logScale
     ? prepareLogData(chartData.data, yKeys)
-    : { clampedData: chartData.data, domainMin: 0 };
+    : { clampedData: chartData.data, domainMin: 0, domainMax: getLinearDomainMax(chartData.data, yKeys) };
   const data = clampedData;
 
   if (!data.length || !yKeys.length) {
@@ -430,7 +454,8 @@ export function ChartRenderer({ chartData, chartType, height = 320, logScale = f
   const rawYLabel = yKeys.length === 1 ? yKeys[0] : "Values";
   const yAxisLabel = truncate(logScale ? `${rawYLabel} (log)` : rawYLabel, 24);
   const xAxisLabel = truncate(xKey, 36);
-  const yProps = makeYAxisProps(logScale, yAxisLabel, domainMin);
+  const yProps = makeYAxisProps(logScale, yAxisLabel, domainMin, domainMax);
+  const { axisKey, ...yAxisProps } = yProps;
 
   // ── Map ───────────────────────────────────────────────────────────
   if (chartType === "map") {
@@ -508,59 +533,106 @@ export function ChartRenderer({ chartData, chartType, height = 320, logScale = f
     const lineGroups = parseCompoundGroups(data, xKey);
     const hasLineGroups = lineGroups !== null;
     const hasAngle = hasLineGroups || data.length > 8;
-    const xAxisHeight = hasAngle ? 88 : 48;
+    const xAxisHeight = hasAngle ? ANGLED_X_AXIS_HEIGHT : STRAIGHT_X_AXIS_HEIGHT;
+    const margin = hasLineGroups ? CHART_MARGIN_GROUPS : CHART_MARGIN;
 
     return (
-      <ScrollableChart dataLength={data.length} minPxPerPoint={MIN_PX_PER_POINT} height={height}>
-        {(computedWidth) => (
-          <Component
-            width={computedWidth || undefined}
-            height={height}
-            data={data}
-            margin={hasLineGroups ? CHART_MARGIN_GROUPS : CHART_MARGIN}
-            style={computedWidth ? {} : { width: "100%" }}
-          >
-            {hasLineGroups && lineGroups!.map((group, gi) => (
-              <ReferenceArea
-                key={`band-${gi}`}
-                x1={group.items[0]}
-                x2={group.items[group.items.length - 1]}
-                fill={GROUP_FILLS[gi % 2]}
-                fillOpacity={1}
-                stroke="none"
-                label={<GroupBandLabel value={group.name} />}
-              />
-            ))}
-            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-            <XAxis
-              dataKey={xKey}
-              tick={hasLineGroups ? <CompoundXTick /> : { fontSize: 11, fill: "#6b7280" }}
-              tickLine={false}
-              angle={hasAngle && !hasLineGroups ? -45 : 0}
-              textAnchor={hasAngle && !hasLineGroups ? "end" : "middle"}
-              height={xAxisHeight}
-              interval={computedWidth ? 0 : "preserveStartEnd"}
-              tickFormatter={hasAngle && !hasLineGroups ? (v: string) => truncate(String(v), 16) : undefined}
-              label={!hasLineGroups ? { value: xAxisLabel, position: "insideBottom", offset: 0, style: AXIS_LABEL_STYLE } : undefined}
-            />
-            <YAxis {...yProps} />
-            <Tooltip {...TOOLTIP_STYLE} cursor={{ stroke: "#e2e8f0", strokeWidth: 1 }} formatter={tooltipFormatter} />
-            <Legend verticalAlign="top" {...LEGEND_STYLE} />
-            {yKeys.map((key, i) => (
-              <DataComponent
-                key={key}
-                type="monotone"
-                dataKey={key}
-                stroke={COLORS[i % COLORS.length]}
-                fill={COLORS[i % COLORS.length]}
-                fillOpacity={chartType === "area" ? 0.1 : 1}
-                strokeWidth={2.5}
-                dot={data.length <= 30 ? { r: 3, strokeWidth: 0 } : false}
-                activeDot={{ r: 5, strokeWidth: 0 }}
-              />
-            ))}
-          </Component>
-        )}
+      <ScrollableChart dataLength={data.length} minPxPerPoint={MIN_PX_PER_POINT} height={height} yAxisWidth={yAxisProps.width}>
+        {(computedWidth, mode) => {
+          const isYAxisOnly = mode === "yAxisOnly";
+          // yAxisOnly renders only the frozen Y-axis. The scrollable body gets
+          // a hidden Y-axis with the same props so scale/domain stay synced.
+          const chartWidth = isYAxisOnly ? computedWidth : (computedWidth || undefined);
+          const chartStyle = isYAxisOnly
+            ? { overflow: "hidden" }
+            : (computedWidth ? {} : { width: "100%" });
+          const chartMargin = isYAxisOnly
+            ? { top: margin.top, right: 0, bottom: 0, left: 0 }
+            : margin;
+
+          return (
+            <Component
+              width={chartWidth || undefined}
+              height={height}
+              data={data}
+              margin={chartMargin}
+              style={chartStyle}
+            >
+              {!isYAxisOnly && hasLineGroups && lineGroups!.map((group, gi) => (
+                <ReferenceArea
+                  key={`band-${gi}`}
+                  x1={group.items[0]}
+                  x2={group.items[group.items.length - 1]}
+                  fill={GROUP_FILLS[gi % 2]}
+                  fillOpacity={1}
+                  stroke="none"
+                  label={isYAxisOnly ? undefined : <GroupBandLabel value={group.name} />}
+                />
+              ))}
+              {!isYAxisOnly && <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />}
+              {!isYAxisOnly && (
+                <XAxis
+                  dataKey={xKey}
+                  tick={hasLineGroups ? <CompoundXTick /> : { fontSize: 11, fill: "#6b7280" }}
+                  tickLine={false}
+                  angle={hasAngle && !hasLineGroups ? -45 : 0}
+                  textAnchor={hasAngle && !hasLineGroups ? "end" : "middle"}
+                  height={xAxisHeight}
+                  interval={computedWidth ? 0 : "preserveStartEnd"}
+                  tickFormatter={hasAngle && !hasLineGroups ? (v: string) => truncate(String(v), 16) : undefined}
+                  label={!hasLineGroups ? { value: xAxisLabel, position: "insideBottom", offset: 0, style: AXIS_LABEL_STYLE } : undefined}
+                />
+              )}
+              {mode === "full" && <YAxis key={axisKey} {...yAxisProps} />}
+              {isYAxisOnly && (
+                <YAxis
+                  key={axisKey}
+                  scale={yAxisProps.scale}
+                  domain={yAxisProps.domain}
+                  allowDataOverflow={yAxisProps.allowDataOverflow}
+                  tick={yAxisProps.tick}
+                  tickLine={false}
+                  axisLine={false}
+                  width={72}
+                  tickFormatter={yAxisProps.tickFormatter}
+                  label={yAxisProps.label}
+                />
+              )}
+              {mode === "noYAxis" && <YAxis key={axisKey} {...yAxisProps} hide />}
+              {!isYAxisOnly && (
+                <Tooltip {...TOOLTIP_STYLE} cursor={{ stroke: "#e2e8f0", strokeWidth: 1 }} formatter={tooltipFormatter} />
+              )}
+              {!isYAxisOnly && <Legend verticalAlign="top" {...LEGEND_STYLE} />}
+              {isYAxisOnly && yKeys.map((key) => (
+                <DataComponent
+                  key={`axis-context-${key}`}
+                  type="monotone"
+                  dataKey={key}
+                  stroke="transparent"
+                  fill="transparent"
+                  fillOpacity={0}
+                  strokeWidth={0}
+                  dot={false}
+                  activeDot={false}
+                  isAnimationActive={false}
+                />
+              ))}
+              {!isYAxisOnly && yKeys.map((key, i) => (
+                <DataComponent
+                  key={key}
+                  type="monotone"
+                  dataKey={key}
+                  stroke={COLORS[i % COLORS.length]}
+                  fill={COLORS[i % COLORS.length]}
+                  fillOpacity={chartType === "area" ? 0.1 : 1}
+                  strokeWidth={2.5}
+                  dot={data.length <= 30 ? { r: 3, strokeWidth: 0 } : false}
+                  activeDot={{ r: 5, strokeWidth: 0 }}
+                />
+              ))}
+            </Component>
+          );
+        }}
       </ScrollableChart>
     );
   }
@@ -574,61 +646,100 @@ export function ChartRenderer({ chartData, chartType, height = 320, logScale = f
 
   // With compound groups, always use angled labels (sub-labels are shorter but there are many)
   const hasAngleBar = hasGroups || data.length > 8;
-  const xAxisHeightBar = hasAngleBar ? 88 : 48;
+  const xAxisHeightBar = hasAngleBar ? ANGLED_X_AXIS_HEIGHT : STRAIGHT_X_AXIS_HEIGHT;
   const barMargin = hasGroups ? CHART_MARGIN_GROUPS : CHART_MARGIN;
 
   return (
-    <ScrollableChart dataLength={data.length} minPxPerPoint={MIN_PX_PER_BAR} height={height}>
-      {(computedWidth) => (
-        <BarChart
-          width={computedWidth || undefined}
-          height={height}
-          data={data}
-          barGap={2}
-          barCategoryGap={data.length > 20 ? "28%" : "32%"}
-          margin={barMargin}
-          style={computedWidth ? {} : { width: "100%" }}
-        >
-          {/* Group background bands — alternating tint makes boundaries clear without overlay lines */}
-          {hasGroups && compoundGroups!.map((group, gi) => (
-            <ReferenceArea
-              key={`band-${gi}`}
-              x1={group.items[0]}
-              x2={group.items[group.items.length - 1]}
-              fill={GROUP_FILLS[gi % 2]}
-              fillOpacity={1}
-              stroke="none"
-              label={<GroupBandLabel value={group.name} />}
-            />
-          ))}
+    <ScrollableChart dataLength={data.length} minPxPerPoint={MIN_PX_PER_BAR} height={height} yAxisWidth={yAxisProps.width}>
+      {(computedWidth, mode) => {
+        const isYAxisOnly = mode === "yAxisOnly";
+        // yAxisOnly renders only the frozen Y-axis. The scrollable body gets
+        // a hidden Y-axis with the same props so scale/domain stay synced.
+        const chartWidth = isYAxisOnly ? computedWidth : (computedWidth || undefined);
+        const chartStyle = isYAxisOnly
+          ? { overflow: "hidden" }
+          : (computedWidth ? {} : { width: "100%" });
+        const chartMargin = isYAxisOnly
+          ? { top: barMargin.top, right: 0, bottom: 0, left: 0 }
+          : barMargin;
 
-          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-          <XAxis
-            dataKey={xKey}
-            tick={hasGroups ? <CompoundXTick /> : { fontSize: 11, fill: "#6b7280" }}
-            tickLine={false}
-            axisLine={false}
-            angle={hasAngleBar && !hasGroups ? -45 : 0}
-            textAnchor={hasAngleBar && !hasGroups ? "end" : "middle"}
-            height={xAxisHeightBar}
-            interval={computedWidth ? 0 : "preserveStartEnd"}
-            tickFormatter={hasAngleBar && !hasGroups ? (v: string) => truncate(String(v), 16) : undefined}
-            label={!hasGroups ? { value: xAxisLabel, position: "insideBottom", offset: 0, style: AXIS_LABEL_STYLE } : undefined}
-          />
-          <YAxis {...yProps} />
-          <Tooltip {...TOOLTIP_STYLE} cursor={{ fill: "rgba(0,0,0,0.03)" }} formatter={tooltipFormatter} />
-          <Legend verticalAlign="top" {...LEGEND_STYLE} />
-          {yKeys.map((key, i) => (
-            <Bar
-              key={key}
-              dataKey={key}
-              fill={singleSeries ? COLORS[0] : COLORS[i % COLORS.length]}
-              shape={singleSeries ? makeCategoricalBarShape(null) : makeCategoricalBarShape(COLORS[i % COLORS.length])}
-              maxBarSize={64}
-            />
-          ))}
-        </BarChart>
-      )}
+        return (
+          <BarChart
+            width={chartWidth || undefined}
+            height={height}
+            data={data}
+            barGap={2}
+            barCategoryGap={data.length > 20 ? "28%" : "32%"}
+            margin={chartMargin}
+            style={chartStyle}
+          >
+            {!isYAxisOnly && hasGroups && compoundGroups!.map((group, gi) => (
+              <ReferenceArea
+                key={`band-${gi}`}
+                x1={group.items[0]}
+                x2={group.items[group.items.length - 1]}
+                fill={GROUP_FILLS[gi % 2]}
+                fillOpacity={1}
+                stroke="none"
+                label={isYAxisOnly ? undefined : <GroupBandLabel value={group.name} />}
+              />
+            ))}
+
+            {!isYAxisOnly && <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />}
+            {!isYAxisOnly && (
+              <XAxis
+                dataKey={xKey}
+                tick={hasGroups ? <CompoundXTick /> : { fontSize: 11, fill: "#6b7280" }}
+                tickLine={false}
+                axisLine={false}
+                angle={hasAngleBar && !hasGroups ? -45 : 0}
+                textAnchor={hasAngleBar && !hasGroups ? "end" : "middle"}
+                height={xAxisHeightBar}
+                interval={computedWidth ? 0 : "preserveStartEnd"}
+                tickFormatter={hasAngleBar && !hasGroups ? (v: string) => truncate(String(v), 16) : undefined}
+                label={!hasGroups ? { value: xAxisLabel, position: "insideBottom", offset: 0, style: AXIS_LABEL_STYLE } : undefined}
+              />
+            )}
+            {mode === "full" && <YAxis key={axisKey} {...yAxisProps} />}
+            {isYAxisOnly && (
+              <YAxis
+                key={axisKey}
+                scale={yAxisProps.scale}
+                domain={yAxisProps.domain}
+                allowDataOverflow={yAxisProps.allowDataOverflow}
+                tick={yAxisProps.tick}
+                tickLine={false}
+                axisLine={false}
+                width={72}
+                tickFormatter={yAxisProps.tickFormatter}
+                label={yAxisProps.label}
+              />
+            )}
+            {mode === "noYAxis" && <YAxis key={axisKey} {...yAxisProps} hide />}
+            {!isYAxisOnly && (
+              <Tooltip {...TOOLTIP_STYLE} cursor={{ fill: "rgba(0,0,0,0.03)" }} formatter={tooltipFormatter} />
+            )}
+            {!isYAxisOnly && <Legend verticalAlign="top" {...LEGEND_STYLE} />}
+            {isYAxisOnly && yKeys.map((key) => (
+              <Bar
+                key={`axis-context-${key}`}
+                dataKey={key}
+                fill="transparent"
+                isAnimationActive={false}
+              />
+            ))}
+            {!isYAxisOnly && yKeys.map((key, i) => (
+              <Bar
+                key={key}
+                dataKey={key}
+                fill={singleSeries ? COLORS[0] : COLORS[i % COLORS.length]}
+                shape={singleSeries ? makeCategoricalBarShape(null) : makeCategoricalBarShape(COLORS[i % COLORS.length])}
+                maxBarSize={64}
+              />
+            ))}
+          </BarChart>
+        );
+      }}
     </ScrollableChart>
   );
 }
