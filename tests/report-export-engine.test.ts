@@ -228,6 +228,38 @@ test("KPI figures render compact multi-metric cards", () => {
   assert.match(html, /text-overflow: ellipsis/);
 });
 
+test("table figures render row data instead of blank cells", () => {
+  const tablePayload = structuredClone(payload);
+  tablePayload.sections[1].embedded_figures[0] = {
+    figure_number: 2,
+    widget_id: "widget-table",
+    title: "Project Categories and Spending Breakdown",
+    widget_type: "table",
+    visual_config: { chartType: "table" },
+    query_output: {
+      columns: ["_x", "Project Count", "Total Appropriation", "Amount Spent", "Avg % Completed"],
+      rows: [
+        {
+          _x: "Roads",
+          "Project Count": 12,
+          "Total Appropriation": 23633664681159.25,
+          "Amount Spent": 25394254047039.48,
+          "Avg % Completed": 55.9011,
+        },
+      ],
+    },
+  };
+
+  const preview = renderPreviewHtml(tablePayload);
+  const html = renderReportHtml(tablePayload);
+
+  assert.match(preview, /<td>Roads<\/td>/);
+  assert.match(preview, /<td>12<\/td>/);
+  assert.match(preview, /<td>23,633,664,681,159\.25<\/td>/);
+  assert.match(html, /<td>Roads<\/td>/);
+  assert.match(html, /<td>25,394,254,047,039\.48<\/td>/);
+});
+
 test("chart legends reserve space and avoid overlapping chart labels", () => {
   const chartPayload = structuredClone(payload);
   chartPayload.sections[1].embedded_figures[0].query_output.y_keys = [

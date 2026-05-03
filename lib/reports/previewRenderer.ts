@@ -93,6 +93,24 @@ function parseChart(queryOutput: JsonObject): { columns: string[]; rows: ChartRo
   };
 }
 
+function parseTable(queryOutput: JsonObject): { columns: string[]; rows: R[] } {
+  const rawRows = Array.isArray(queryOutput.rows) ? queryOutput.rows : [];
+  const rows = rawRows.filter((row): row is R => Boolean(row && typeof row === "object" && !Array.isArray(row)));
+  const configuredColumns = Array.isArray(queryOutput.columns)
+    ? queryOutput.columns.filter((column): column is string => typeof column === "string")
+    : [];
+  const columns = configuredColumns.length > 0
+    ? configuredColumns
+    : Array.from(new Set(rows.flatMap((row) => Object.keys(row))));
+  return { columns, rows };
+}
+
+function tableValue(value: unknown): string {
+  return typeof value === "number"
+    ? value.toLocaleString(undefined, { maximumFractionDigits: 2 })
+    : String(value ?? "");
+}
+
 function svgBar(figure: R, w = 560, h = 340): string {
   const { rows, yKeys } = parseChart(figure.query_output as JsonObject);
   if (rows.length === 0) return `<div class="chart-na">No data for this chart</div>`;
@@ -209,9 +227,9 @@ function figureHtml(figure: R): string {
       return `<div class="kpi-box"><span class="kpi-lbl" title="${esc(key)}">${esc(key)}</span><span class="kpi-val" title="${esc(value.full)}">${esc(value.display)}</span></div>`;
     }).join("")}</div>`;
   } else {
-    const { rows, columns } = parseChart(figure.query_output as JsonObject);
+    const { rows, columns } = parseTable(figure.query_output as JsonObject);
     const hdrs = columns.slice(0, 8);
-    chart = `<table class="fig-tbl"><thead><tr>${hdrs.map((h) => `<th>${esc(h)}</th>`).join("")}</tr></thead><tbody>${rows.slice(0, 50).map((row) => `<tr>${hdrs.map((h) => `<td>${esc(String((row as unknown as R)[h] ?? ""))}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+    chart = `<table class="fig-tbl"><thead><tr>${hdrs.map((h) => `<th>${esc(h)}</th>`).join("")}</tr></thead><tbody>${rows.slice(0, 50).map((row) => `<tr>${hdrs.map((h) => `<td>${esc(tableValue(row[h]))}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
   }
   return `<figure class="report-fig" contenteditable="false" data-figure-number="${esc(figure.figure_number)}">${chart}<figcaption>Figure ${figure.figure_number}: ${esc(figure.title)}</figcaption></figure>`;
 }

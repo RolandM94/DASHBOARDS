@@ -158,6 +158,24 @@ function parseChartData(queryOutput: JsonObject): { columns: string[]; rows: Cha
   return { columns, rows, yKeys };
 }
 
+function parseTableData(queryOutput: JsonObject): { columns: string[]; rows: JsonObject[] } {
+  const rawRows = Array.isArray(queryOutput.rows) ? queryOutput.rows : [];
+  const rows = rawRows.filter((row): row is JsonObject => Boolean(row && typeof row === "object" && !Array.isArray(row)));
+  const configuredColumns = Array.isArray(queryOutput.columns)
+    ? queryOutput.columns.filter((column): column is string => typeof column === "string")
+    : [];
+  const columns = configuredColumns.length > 0
+    ? configuredColumns
+    : Array.from(new Set(rows.flatMap((row) => Object.keys(row))));
+  return { columns, rows };
+}
+
+function tableDisplayValue(value: unknown): string {
+  return typeof value === "number"
+    ? value.toLocaleString(undefined, { maximumFractionDigits: 2 })
+    : String(value ?? "");
+}
+
 function svgTextSizer(value: string, size = 14): number {
   return value.length * size * 0.6;
 }
@@ -363,9 +381,9 @@ function renderFigureHtml(figure: FigureData): string {
     }).join("")}</div>`;
   } else {
     // table or unknown — render as data table
-    const { rows, columns } = parseChartData(figure.query_output);
+    const { rows, columns } = parseTableData(figure.query_output);
     const headers = columns.slice(0, 8);
-    chartHtml = `<table class="figure-table"><thead><tr>${headers.map((h) => `<th>${escapeHtml(h)}</th>`).join("")}</tr></thead><tbody>${rows.slice(0, 50).map((row) => `<tr>${headers.map((h) => `<td>${escapeHtml(String((row as unknown as Record<string, unknown>)[h] ?? ""))}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+    chartHtml = `<table class="figure-table"><thead><tr>${headers.map((h) => `<th>${escapeHtml(h)}</th>`).join("")}</tr></thead><tbody>${rows.slice(0, 50).map((row) => `<tr>${headers.map((h) => `<td>${escapeHtml(tableDisplayValue(row[h]))}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
   }
 
   return `<figure class="report-figure">
@@ -846,20 +864,14 @@ export async function renderReportDocx(payload: JsonObject, options: ReportExpor
       const embeddedFigures = Array.isArray(record.embedded_figures) ? record.embedded_figures : [];
       for (const fig of embeddedFigures) {
         const f = fig as unknown as FigureData;
-        const { rows, columns } = parseChartData(f.query_output);
+        const { rows, columns } = parseTableData(f.query_output);
         const headerColumns = columns.slice(0, 8);
         children.push(new Paragraph({
           spacing: { before: 240 },
           children: [new TextRun({ text: `Figure ${f.figure_number}: ${f.title}`, italics: true, font: "Times New Roman", size: 22 })],
         }));
         if (rows.length > 0 && headerColumns.length > 0) {
-          children.push(...docxTable(f.title, rows.map((row) => {
-            const obj: Record<string, unknown> = {};
-            headerColumns.forEach((col, ci) => {
-              obj[col] = row.values[ci] ?? (row as unknown as Record<string, unknown>)[col];
-            });
-            return obj;
-          })));
+          children.push(...docxTable(f.title, rows));
         }
       }
     }
