@@ -76,15 +76,15 @@ export function WorksheetCard({ worksheet }: { worksheet: Worksheet }) {
         </DialogContent>
       </Dialog>
 
-      <Link href={`/analytics/workbook/${worksheet.id}`} className="block group">
+      <Link href={`/analytics/workbook/${worksheet.id}`} className="block group h-full">
         <div
-          className="relative rounded-xl border bg-white overflow-hidden transition-all duration-200 hover:shadow-md hover:-translate-y-0.5"
+          className="relative flex flex-col h-full rounded-xl border bg-white overflow-hidden transition-all duration-200 hover:shadow-md hover:-translate-y-0.5"
           style={{ boxShadow: "0px 0px 1px 0px rgba(0,0,0,.15), 0px 1px 4px 0px rgba(0,0,0,.04)" }}
         >
           {/* Coloured accent strip */}
-          <div className="h-1 w-full" style={{ backgroundColor: meta.color }} />
+          <div className="h-1 w-full shrink-0" style={{ backgroundColor: meta.color }} />
 
-          <div className="p-4 space-y-3">
+          <div className="p-4 space-y-3 flex flex-col flex-1">
             {/* Icon + delete */}
             <div className="flex items-start justify-between">
               <div
@@ -103,17 +103,17 @@ export function WorksheetCard({ worksheet }: { worksheet: Worksheet }) {
             </div>
 
             {/* Name + description */}
-            <div>
+            <div className="flex-1">
               <p className="font-semibold text-sm leading-snug line-clamp-2 text-slate-800">
                 {worksheet.name}
               </p>
-              {worksheet.description && (
-                <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{worksheet.description}</p>
-              )}
+              <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1 min-h-[1rem]">
+                {worksheet.description ?? "\u00A0"}
+              </p>
             </div>
 
             {/* Meta row */}
-            <div className="flex items-center gap-1.5 flex-wrap">
+            <div className="flex items-center gap-1.5 flex-wrap min-h-[22px]">
               <Badge
                 variant="secondary"
                 className="text-[10px] px-1.5 py-0 font-medium"
