@@ -56,17 +56,17 @@ const REPORT_TYPE_LABELS: Record<ReportType, string> = {
   custom_report: "Custom report",
 };
 
-const STATUS_LABELS: Record<ReportProject["status"], string> = {
+const REPORT_PROGRESS_LABELS: Record<ReportProject["status"], string> = {
   draft: "Draft",
-  blueprint_generated: "Blueprint",
-  blueprint_approved: "Approved outline",
+  blueprint_generated: "Outline ready",
+  blueprint_approved: "Outline ready",
   generating: "Generating",
-  generated: "Generated",
+  generated: "Draft ready",
   exported: "Exported",
-  review: "Review",
-  approved: "Approved",
+  review: "Ready",
+  approved: "Ready",
   archived: "Archived",
-  failed: "Failed",
+  failed: "Needs attention",
 };
 
 type SourceOption = {
@@ -147,11 +147,14 @@ function getSourceLabel(project: ReportProject, sourceOptions: SourceOption[]) {
   return sourceOptions.find((option) => option.type === project.sourceType && option.id === sourceId)?.title ?? sourceId ?? "Source";
 }
 
-function getStatusTone(status: ReportProject["status"]) {
-  if (status === "failed") return "bg-red-100 text-red-700 border-red-200";
-  if (status === "approved" || status === "exported") return "bg-green-100 text-green-700 border-green-200";
-  if (status === "review") return "bg-amber-100 text-amber-700 border-amber-200";
-  return "bg-slate-100 text-slate-700 border-slate-200";
+function getProgressLabel(status: ReportProject["status"]) {
+  return REPORT_PROGRESS_LABELS[status] ?? "Draft";
+}
+
+function getProgressTextClass(status: ReportProject["status"]) {
+  if (status === "failed") return "text-red-600";
+  if (status === "exported") return "text-green-700";
+  return "text-muted-foreground";
 }
 
 function ReportProjectCreateModal({
@@ -324,11 +327,10 @@ function ProjectList({
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="text-sm font-semibold truncate">{project.name}</p>
-              <p className="text-xs text-muted-foreground truncate">{getSourceLabel(project, sourceOptions)}</p>
+              <p className="text-xs text-muted-foreground truncate">
+                {getSourceLabel(project, sourceOptions)} · {getProgressLabel(project.status)}
+              </p>
             </div>
-            <Badge className={cn("text-[10px] shrink-0", getStatusTone(project.status))}>
-              {STATUS_LABELS[project.status]}
-            </Badge>
           </div>
           <p className="mt-2 text-[10px] text-muted-foreground">Updated {formatDate(project.updatedAt)}</p>
         </button>
@@ -1127,9 +1129,6 @@ export function ReportWorkspace() {
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <h2 className="text-xl font-bold">{selectedProject.name}</h2>
-                        <Badge className={cn("text-[10px]", getStatusTone(selectedProject.status))}>
-                          {STATUS_LABELS[selectedProject.status]}
-                        </Badge>
                       </div>
                       <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                         <span className="inline-flex items-center gap-1">
@@ -1137,6 +1136,9 @@ export function ReportWorkspace() {
                           {getSourceLabel(selectedProject, sourceOptions)}
                         </span>
                         <span>{REPORT_TYPE_LABELS[selectedProject.reportType]}</span>
+                        <span className={cn("font-medium", getProgressTextClass(selectedProject.status))}>
+                          {getProgressLabel(selectedProject.status)}
+                        </span>
                         <span>Updated {formatDate(selectedProject.updatedAt)}</span>
                       </div>
                     </div>

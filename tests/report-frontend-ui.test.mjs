@@ -22,17 +22,17 @@ async function readJson(res) {
   return body;
 }
 
-const STATUS_LABELS = {
+const REPORT_PROGRESS_LABELS = {
   draft: "Draft",
-  blueprint_generated: "Blueprint",
-  blueprint_approved: "Approved outline",
+  blueprint_generated: "Outline ready",
+  blueprint_approved: "Outline ready",
   generating: "Generating",
-  generated: "Generated",
+  generated: "Draft ready",
   exported: "Exported",
-  review: "Review",
-  approved: "Approved",
+  review: "Ready",
+  approved: "Ready",
   archived: "Archived",
-  failed: "Failed",
+  failed: "Needs attention",
 };
 
 const REPORT_TYPE_LABELS = {
@@ -47,11 +47,14 @@ function getSourceLabel(project, sourceOptions) {
   return sourceOptions.find((option) => option.type === project.sourceType && option.id === sourceId)?.title ?? sourceId ?? "Source";
 }
 
-function getStatusTone(status) {
-  if (status === "failed") return "bg-red-100 text-red-700 border-red-200";
-  if (status === "approved" || status === "exported") return "bg-green-100 text-green-700 border-green-200";
-  if (status === "review") return "bg-amber-100 text-amber-700 border-amber-200";
-  return "bg-slate-100 text-slate-700 border-slate-200";
+function getProgressLabel(status) {
+  return REPORT_PROGRESS_LABELS[status] ?? "Draft";
+}
+
+function getProgressTextClass(status) {
+  if (status === "failed") return "text-red-600";
+  if (status === "exported") return "text-green-700";
+  return "text-muted-foreground";
 }
 
 function isBlueprintApprovable(blueprint) {
@@ -115,14 +118,16 @@ test("readJson throws fallback message on non-2xx when json parsing fails", asyn
   await assert.rejects(() => readJson(res), /Request failed \(403\)/);
 });
 
-// STATUS_LABELS
+// REPORT_PROGRESS_LABELS
 
-test("STATUS_LABELS covers all project statuses", () => {
+test("REPORT_PROGRESS_LABELS covers all project statuses without approval jargon", () => {
   const expected = ["draft", "blueprint_generated", "blueprint_approved", "generating", "generated", "exported", "review", "approved", "archived", "failed"];
   for (const status of expected) {
-    assert.ok(STATUS_LABELS[status], `Missing label for status: ${status}`);
-    assert.equal(typeof STATUS_LABELS[status], "string");
+    assert.ok(REPORT_PROGRESS_LABELS[status], `Missing label for status: ${status}`);
+    assert.equal(typeof REPORT_PROGRESS_LABELS[status], "string");
   }
+  assert.equal(REPORT_PROGRESS_LABELS.approved, "Ready");
+  assert.equal(REPORT_PROGRESS_LABELS.blueprint_approved, "Outline ready");
 });
 
 // REPORT_TYPE_LABELS
@@ -163,26 +168,26 @@ test("getSourceLabel falls back to 'Source' when sourceId is null and no match",
   assert.equal(getSourceLabel(project, sourceOptions), "Source");
 });
 
-// getStatusTone tests
+// getProgressTextClass tests
 
-test("getStatusTone returns red for failed", () => {
-  assert.match(getStatusTone("failed"), /red/);
+test("getProgressTextClass returns red for failed", () => {
+  assert.match(getProgressTextClass("failed"), /red/);
 });
 
-test("getStatusTone returns green for approved and exported", () => {
-  assert.match(getStatusTone("approved"), /green/);
-  assert.match(getStatusTone("exported"), /green/);
+test("getProgressTextClass returns green for exported only", () => {
+  assert.match(getProgressTextClass("exported"), /green/);
+  assert.doesNotMatch(getProgressTextClass("approved"), /green/);
 });
 
-test("getStatusTone returns amber for review", () => {
-  assert.match(getStatusTone("review"), /amber/);
-});
-
-test("getStatusTone returns slate for all other statuses", () => {
-  const slateStatuses = ["draft", "blueprint_generated", "blueprint_approved", "generating", "generated", "archived"];
-  for (const status of slateStatuses) {
-    assert.match(getStatusTone(status), /slate/, `Expected slate for ${status}`);
+test("getProgressTextClass returns muted for normal authoring states", () => {
+  const mutedStatuses = ["draft", "blueprint_generated", "blueprint_approved", "generating", "generated", "review", "approved", "archived"];
+  for (const status of mutedStatuses) {
+    assert.match(getProgressTextClass(status), /muted/, `Expected muted for ${status}`);
   }
+});
+
+test("getProgressLabel falls back to Draft", () => {
+  assert.equal(getProgressLabel("unknown"), "Draft");
 });
 
 // isBlueprintApprovable tests
