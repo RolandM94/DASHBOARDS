@@ -284,10 +284,10 @@ test("workflow allows partial progression (captured but no blueprint yet)", () =
 });
 
 // Tab configuration tests (from Tabs + TabsTrigger in ReportWorkspace)
-test("report workspace has the correct 5 tabs", () => {
-  const tabs = ["blueprint", "sections", "preview", "export", "audit"];
-  assert.equal(tabs.length, 5);
-  assert.deepEqual(tabs, ["blueprint", "sections", "preview", "export", "audit"]);
+test("report workspace has the normal report authoring tabs", () => {
+  const tabs = ["blueprint", "sections", "preview", "export"];
+  assert.equal(tabs.length, 4);
+  assert.deepEqual(tabs, ["blueprint", "sections", "preview", "export"]);
 });
 
 // Export format tests

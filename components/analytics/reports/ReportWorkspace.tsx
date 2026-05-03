@@ -15,12 +15,10 @@ import {
   List,
   ListOrdered,
   Loader2,
-  Lock,
   Pencil,
   Plus,
   RefreshCw,
   Save,
-  Send,
   Sparkles,
   Underline,
 } from "lucide-react";
@@ -82,12 +80,8 @@ type BusyAction =
   | "create"
   | "capture"
   | "blueprint"
-  | "approveBlueprint"
   | "sections"
   | "compile"
-  | "submitReview"
-  | "approveReport"
-  | "lockReport"
   | "jobPoll"
   | "previewSave"
   | `section:${string}`
@@ -736,28 +730,6 @@ function ExportPanel({
   );
 }
 
-function ReportAuditTrailPanel({ logs }: { logs: ReportGenerationLog[] }) {
-  if (logs.length === 0) {
-    return <p className="text-sm text-muted-foreground">No audit events yet.</p>;
-  }
-  return (
-    <div className="space-y-2">
-      {logs.map((log) => (
-        <div key={log.id} className="rounded-lg border bg-white p-3">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-sm font-medium">{log.actionType.replaceAll("_", " ")}</p>
-            <Badge variant={log.status === "failed" ? "destructive" : "secondary"} className="text-[10px]">
-              {log.status}
-            </Badge>
-          </div>
-          <p className="mt-1 text-xs text-muted-foreground">{formatDate(log.createdAt)}</p>
-          {log.errorMessage && <p className="mt-2 text-xs text-red-700">{log.errorMessage}</p>}
-        </div>
-      ))}
-    </div>
-  );
-}
-
 export function ReportWorkspace() {
   const searchParams = useSearchParams();
   const canvases = useCanvasStore((state) => state.canvases);
@@ -1070,7 +1042,6 @@ export function ReportWorkspace() {
 
   const hasSnapshot = logs.some((log) => log.actionType === "capture_source_snapshot" && log.status === "success");
   const hasGeneratedSections = sections.some((section) => section.generatedContent || section.editedContent);
-  const canApproveBlueprint = latestBlueprint && latestBlueprint.status !== "approved" && latestBlueprint.status !== "locked";
   const activeJob = jobs.find((job) => job.status === "queued" || job.status === "running");
   const isPolling = busyAction === "jobPoll";
 
@@ -1083,7 +1054,7 @@ export function ReportWorkspace() {
               <FileText className="h-5 w-5 text-brand" />
               <h1 className="text-2xl font-bold tracking-tight">Reports</h1>
             </div>
-            <p className="mt-1 text-sm text-muted-foreground">Generate, review, compile, and export reports from analytics sources.</p>
+            <p className="mt-1 text-sm text-muted-foreground">Generate, edit, preview, and export reports from analytics sources.</p>
           </div>
           <Button onClick={() => setCreateOpen(true)} className="gap-2">
             <Sparkles className="h-4 w-4" />
@@ -1159,12 +1130,6 @@ export function ReportWorkspace() {
                         <Badge className={cn("text-[10px]", getStatusTone(selectedProject.status))}>
                           {STATUS_LABELS[selectedProject.status]}
                         </Badge>
-                        {selectedProject.lockedAt && (
-                          <Badge variant="secondary" className="text-[10px] gap-1">
-                            <Lock className="h-3 w-3" />
-                            Locked
-                          </Badge>
-                        )}
                       </div>
                       <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                         <span className="inline-flex items-center gap-1">
@@ -1174,38 +1139,6 @@ export function ReportWorkspace() {
                         <span>{REPORT_TYPE_LABELS[selectedProject.reportType]}</span>
                         <span>Updated {formatDate(selectedProject.updatedAt)}</span>
                       </div>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => runProjectAction("submitReview", () => postProjectAction("submit-review"), "Review requested")}
-                        disabled={busyAction === "submitReview"}
-                        className="gap-2"
-                      >
-                        {busyAction === "submitReview" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                        Submit
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => runProjectAction("approveReport", () => postProjectAction("approve-report"), "Report approved")}
-                        disabled={busyAction === "approveReport"}
-                        className="gap-2"
-                      >
-                        {busyAction === "approveReport" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                        Approve
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => runProjectAction("lockReport", () => postProjectAction("lock-report"), "Report locked")}
-                        disabled={busyAction === "lockReport"}
-                        className="gap-2"
-                      >
-                        {busyAction === "lockReport" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Lock className="h-4 w-4" />}
-                        Lock
-                      </Button>
                     </div>
                   </div>
                 </div>
@@ -1246,7 +1179,7 @@ export function ReportWorkspace() {
                       Capture
                     </Button>
                   </WorkflowStep>
-                  <WorkflowStep title="Blueprint" detail={latestBlueprint ? `Version ${latestBlueprint.version} - ${latestBlueprint.status}` : "Generate outline"} done={!!latestBlueprint} active={hasSnapshot && !latestBlueprint}>
+                  <WorkflowStep title="Blueprint" detail={latestBlueprint ? `Version ${latestBlueprint.version} ready` : "Generate outline"} done={!!latestBlueprint} active={hasSnapshot && !latestBlueprint}>
                     <Button
                       size="sm"
                       variant="outline"
@@ -1258,7 +1191,7 @@ export function ReportWorkspace() {
                       Generate
                     </Button>
                   </WorkflowStep>
-                  <WorkflowStep title="Sections" detail={hasGeneratedSections ? `${sections.length} sections ready` : "Generate section content"} done={hasGeneratedSections} active={latestBlueprint?.status === "approved" && !hasGeneratedSections}>
+                  <WorkflowStep title="Sections" detail={hasGeneratedSections ? `${sections.length} sections ready` : "Generate section content"} done={hasGeneratedSections} active={!!latestBlueprint && !hasGeneratedSections}>
                     <Button
                       size="sm"
                       variant="outline"
@@ -1297,27 +1230,10 @@ export function ReportWorkspace() {
                     <TabsTrigger value="sections">Sections</TabsTrigger>
                     <TabsTrigger value="preview">Preview</TabsTrigger>
                     <TabsTrigger value="export">Export</TabsTrigger>
-                    <TabsTrigger value="audit">Audit</TabsTrigger>
                   </TabsList>
 
                   <TabsContent value="blueprint" className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <h2 className="text-sm font-semibold">Blueprint</h2>
-                      {canApproveBlueprint && (
-                        <Button
-                          size="sm"
-                          onClick={() => runProjectAction("approveBlueprint", async () => {
-                            if (!latestBlueprint) return;
-                            await readJson(await fetch(`/api/reports/blueprints/${latestBlueprint.id}/approve`, { method: "POST" }));
-                          }, "Blueprint approved")}
-                          disabled={busyAction === "approveBlueprint"}
-                          className="gap-2"
-                        >
-                          {busyAction === "approveBlueprint" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                          Approve outline
-                        </Button>
-                      )}
-                    </div>
+                    <h2 className="text-sm font-semibold">Blueprint</h2>
                     <BlueprintPanel blueprint={latestBlueprint} onSave={saveBlueprint} saving={busyAction === "blueprint"} />
                   </TabsContent>
 
@@ -1344,9 +1260,6 @@ export function ReportWorkspace() {
                     <ExportPanel exports={exports} busyAction={busyAction} onExport={exportReport} />
                   </TabsContent>
 
-                  <TabsContent value="audit">
-                    <ReportAuditTrailPanel logs={logs} />
-                  </TabsContent>
                 </Tabs>
 
                 <Separator />
