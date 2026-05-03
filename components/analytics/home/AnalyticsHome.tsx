@@ -455,7 +455,7 @@ export function AnalyticsHome() {
               </span>
             </div>
             <p className="text-xs text-muted-foreground mb-3 -mt-2">
-              Pre-loaded datasets you can use to explore Eyemark Dashboards.
+              Pre-loaded datasets you can use to explore Supercoolstuff Dashboards.
             </p>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
               {(seedExpanded ? seedDatasets : seedDatasets.slice(0, PREVIEW)).map((d) => (

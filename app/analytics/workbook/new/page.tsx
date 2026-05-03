@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { WorksheetBuilder } from "@/components/analytics/worksheet/WorksheetBuilder";
 
 export const metadata: Metadata = {
-  title: "New Workbook | Eyemark",
+  title: "New Workbook | Supercoolstuff",
 };
 
 export default function NewWorkbookPage() {

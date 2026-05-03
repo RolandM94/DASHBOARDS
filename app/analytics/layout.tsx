@@ -73,7 +73,7 @@ function OrgSetupScreen({ onCreated, onSignOut }: { onCreated: () => void; onSig
           <div className="h-9 w-9 bg-brand rounded-xl flex items-center justify-center">
             <BarChart2 className="h-5 w-5 text-white" />
           </div>
-          <span className="font-bold text-lg">Eyemark</span>
+          <span className="font-bold text-lg">Supercoolstuff</span>
         </div>
 
         {/* Card */}
@@ -228,7 +228,7 @@ export default function AnalyticsLayout({ children }: { children: React.ReactNod
               <div className="h-7 w-7 bg-brand rounded-lg flex items-center justify-center">
                 <BarChart2 className="h-4 w-4 text-white" />
               </div>
-              <span className="font-bold text-sm">Eyemark</span>
+              <span className="font-bold text-sm">Supercoolstuff</span>
             </div>
           </div>
 

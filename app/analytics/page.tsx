@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { AnalyticsHome } from "@/components/analytics/home/AnalyticsHome";
 
 export const metadata: Metadata = {
-  title: "Analytics | Eyemark",
+  title: "Analytics | Supercoolstuff",
 };
 
 export default function AnalyticsPage() {

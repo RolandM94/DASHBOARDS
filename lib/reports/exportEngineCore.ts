@@ -472,7 +472,7 @@ export async function renderReportDocx(payload: JsonObject, options: ReportExpor
 
   const document = new Document({
     title,
-    creator: "Eyemark",
+    creator: "Supercoolstuff",
     description: "AI-generated report export",
     sections: [{
       properties: {

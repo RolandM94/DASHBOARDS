@@ -4,7 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/lib/toast";
 
 export const metadata: Metadata = {
-  title: "Eyemark Dashboards",
+  title: "Supercoolstuff Dashboards",
   description: "AI-powered analytics for government monitoring & evaluation",
 };
 

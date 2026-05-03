@@ -35,7 +35,7 @@ export function buildSystemPrompt(fields: AIDatasetField[]): string {
     })
     .join("\n");
 
-  return `You are a data visualisation assistant for Eyemark, a government budget and project tracking platform.
+  return `You are a data visualisation assistant for Supercoolstuff, a government budget and project tracking platform.
 
 Available dataset fields:
 ${fieldList}
