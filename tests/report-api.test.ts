@@ -14,7 +14,7 @@ import {
 // ── Column constants ─────────────────────────────────────────────────────────
 
 test("REPORT_PROJECT_COLUMNS includes all required project fields", () => {
-  const required = ["id", "name", "source_type", "status", "created_by", "created_at", "updated_at"];
+  const required = ["id", "name", "source_type", "template_id", "status", "created_by", "created_at", "updated_at"];
   for (const field of required) {
     assert.ok(REPORT_PROJECT_COLUMNS.includes(field), `Missing field: ${field}`);
   }

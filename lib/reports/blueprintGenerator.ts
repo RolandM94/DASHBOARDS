@@ -18,14 +18,17 @@ import type {
   ReportBlueprint,
   ReportSection,
   ReportSectionType,
+  ReportTemplate,
   ReportSourceSnapshot,
   ReportType,
+  ReferenceDocument,
 } from "@/types";
 
 export interface GenerateReportBlueprintInput {
   instructions?: string;
   audience?: string;
   reportType?: ReportType;
+  templateContext?: TemplatePromptContext;
 }
 
 export interface GenerateReportBlueprintResult {
@@ -38,6 +41,7 @@ interface ReportProjectRow {
   id: string;
   name: string;
   description?: string | null;
+  template_id?: string | null;
   report_type: ReportType;
   status: string;
 }
@@ -100,6 +104,29 @@ interface SanitisedBlueprint {
   blueprintJson: Record<string, unknown>;
   sections: BlueprintSectionCandidate[];
   warnings: string[];
+}
+
+interface TemplatePromptContext {
+  id: string;
+  name: string;
+  description?: string;
+  settings?: Record<string, unknown>;
+  referencePrompt?: string;
+  sections: Array<{
+    title: string;
+    section_type: string;
+    blocks: Array<{
+      type: string;
+      prompt?: string;
+      default_content?: string;
+      widget_selector?: Record<string, unknown>;
+    }>;
+  }>;
+  referenceDocuments: Array<{
+    filename: string;
+    fileType: string;
+    extractedText?: string;
+  }>;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -185,6 +212,8 @@ Rules:
 - Include an executive summary when useful.
 - Include a methodology/source note section when filters, snapshots, or multiple widgets are involved.
 - Include recommendations only when there is enough source evidence.
+- If report_template is provided, use its section order, section intent, block prompts, and chart/table placement as the primary structure unless it conflicts with available source evidence.
+- Uploaded template reference document excerpts describe the desired format and tone; follow them for structure, not for factual claims.
 - Flag missing analytical coverage in "warnings".
 - Keep the report dataset-agnostic. Do not assume a government, budget, project, sales, or operations domain unless the source labels clearly say so.
 
@@ -262,6 +291,7 @@ function buildBlueprintUserPrompt(
       requested_audience: input.audience,
       instructions: input.instructions,
     },
+    report_template: input.templateContext,
     source: metadata.source ?? {
       type: snapshot.sourceType,
       id: snapshot.sourceId,
@@ -273,6 +303,84 @@ function buildBlueprintUserPrompt(
     insights,
     warnings_from_capture: metadata.warnings ?? [],
   });
+}
+
+function templateContextFromRows(
+  template: ReportTemplate,
+  documents: ReferenceDocument[]
+): TemplatePromptContext {
+  return {
+    id: template.id,
+    name: template.name,
+    description: template.description,
+    settings: template.layoutJson.settings,
+    referencePrompt: template.layoutJson.referencePrompt,
+    sections: (template.layoutJson.sections ?? []).map((section) => ({
+      title: section.title,
+      section_type: section.section_type,
+      blocks: section.layout.rows.flatMap((row) =>
+        row.columns.map((column) => ({
+          type: column.type,
+          prompt: column.prompt,
+          default_content: column.default_content,
+          widget_selector: column.widget_selector,
+        }))
+      ),
+    })),
+    referenceDocuments: documents.slice(0, 5).map((doc) => ({
+      filename: doc.filename,
+      fileType: doc.fileType,
+      extractedText: doc.extractedText?.slice(0, 2500),
+    })),
+  };
+}
+
+async function getTemplateContext(
+  supabase: SupabaseRouteClient,
+  templateId?: string | null
+): Promise<TemplatePromptContext | undefined> {
+  if (!templateId) return undefined;
+
+  const { data: template } = await supabase
+    .from("report_templates")
+    .select("id, name, description, layout_json, reference_document_ids, created_by, created_at, updated_at")
+    .eq("id", templateId)
+    .single();
+
+  if (!template) return undefined;
+
+  const { data: documents } = await supabase
+    .from("template_reference_documents")
+    .select("id, template_id, report_project_id, filename, file_url, file_type, extracted_text, page_count, metadata, created_by, created_at")
+    .eq("template_id", templateId)
+    .order("created_at", { ascending: false });
+
+  const model: ReportTemplate = {
+    id: String(template.id),
+    name: String(template.name),
+    description: optionalString(template.description),
+    layoutJson: (template.layout_json ?? { sections: [] }) as ReportTemplate["layoutJson"],
+    referenceDocumentIds: Array.isArray(template.reference_document_ids) ? template.reference_document_ids as string[] : [],
+    createdBy: String(template.created_by),
+    createdAt: String(template.created_at),
+    updatedAt: String(template.updated_at),
+  };
+
+  const docs: ReferenceDocument[] = asRecordArray(documents).map((doc) => ({
+    id: String(doc.id),
+    templateId: optionalString(doc.template_id),
+    reportProjectId: optionalString(doc.report_project_id),
+    filename: String(doc.filename),
+    fileUrl: String(doc.file_url),
+    fileType: doc.file_type as ReferenceDocument["fileType"],
+    extractedText: optionalString(doc.extracted_text),
+    pageCount: Number(doc.page_count ?? 0),
+    metadata: asRecord(doc.metadata),
+    createdBy: String(doc.created_by),
+    createdAt: String(doc.created_at),
+  }));
+
+  return templateContextFromRows(model, docs);
 }
 
 function parseBlueprint(raw: string): Record<string, unknown> {
@@ -406,7 +514,7 @@ export async function generateReportBlueprint(
 
   const { data: project, error: projectError } = await supabase
     .from("report_projects")
-    .select("id, name, description, report_type, status")
+    .select("id, name, description, template_id, report_type, status")
     .eq("id", reportProjectId)
     .single();
 
@@ -426,6 +534,7 @@ export async function generateReportBlueprint(
 
   const projectRow = project as ReportProjectRow;
   const snapshotModel = snapshotFromRow(snapshot as SnapshotRow);
+  const templateContext = await getTemplateContext(supabase, projectRow.template_id);
   const client = new Anthropic({ apiKey });
   const message = await client.messages.create({
     model: "claude-haiku-4-5-20251001",
@@ -434,7 +543,7 @@ export async function generateReportBlueprint(
     messages: [
       {
         role: "user",
-        content: buildBlueprintUserPrompt(projectRow, snapshotModel, input),
+        content: buildBlueprintUserPrompt(projectRow, snapshotModel, { ...input, templateContext }),
       },
     ],
   });

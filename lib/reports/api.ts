@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 
 export const REPORT_PROJECT_COLUMNS =
-  "id, name, description, source_type, source_dashboard_id, source_canvas_id, report_type, status, workflow_enabled, review_requested_by, review_requested_at, approved_by, approved_at, locked_by, locked_at, created_by, created_at, updated_at";
+  "id, name, description, source_type, source_dashboard_id, source_canvas_id, template_id, report_type, status, workflow_enabled, review_requested_by, review_requested_at, approved_by, approved_at, locked_by, locked_at, created_by, created_at, updated_at";
 
 export const REPORT_BLUEPRINT_COLUMNS =
   "id, report_project_id, version, status, title, objective, audience, blueprint_json, generated_by_ai, approved_by, approved_at, created_at, updated_at";

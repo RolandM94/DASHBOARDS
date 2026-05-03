@@ -380,6 +380,7 @@ export interface ReportProject {
   sourceType: ReportSourceType;
   sourceDashboardId?: string;
   sourceCanvasId?: string;
+  templateId?: string;
   reportType: ReportType;
   status: ReportProjectStatus;
   workflowEnabled: boolean;
@@ -522,8 +523,9 @@ export interface ReportJob {
 // ── Templates ────────────────────────────────────────────────────────────────
 
 export interface TemplateLayoutSlot {
-  type: "ai_narrative" | "chart" | "text_block";
+  type: "ai_narrative" | "chart" | "table" | "image" | "divider" | "text_block";
   width: number;
+  prompt?: string;
   widget_selector?: {
     match_type: "by_id" | "by_type" | "by_worksheet" | "any";
     value?: string;
@@ -548,6 +550,17 @@ export interface ReportTemplate {
   description?: string;
   layoutJson: {
     sections: TemplateLayoutSection[];
+    settings?: {
+      sampleForm?: "single_column" | "two_columns";
+      contentDensity?: "concise" | "standard" | "detailed";
+      orientation?: "portrait" | "landscape";
+      includeTables?: boolean;
+      includeInfographics?: boolean;
+      includeFootnotes?: boolean;
+      includePageNumbers?: boolean;
+      analysisFocus?: string;
+    };
+    referencePrompt?: string;
   };
   referenceDocumentIds: string[];
   createdBy: string;

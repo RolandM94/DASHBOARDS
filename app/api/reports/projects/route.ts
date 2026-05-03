@@ -54,6 +54,16 @@ export async function POST(request: NextRequest) {
     if (!canvas) return NextResponse.json({ error: "Canvas source not found or access denied" }, { status: 404 });
   }
 
+  if (typeof body.templateId === "string" && body.templateId.trim()) {
+    const { data: template } = await supabase
+      .from("report_templates")
+      .select("id")
+      .eq("id", body.templateId.trim())
+      .eq("created_by", user.id)
+      .single();
+    if (!template) return NextResponse.json({ error: "Template not found or access denied" }, { status: 404 });
+  }
+
   const { data, error } = await supabase
     .from("report_projects")
     .insert(built.data!)

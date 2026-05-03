@@ -109,6 +109,7 @@ test("dbToReportProject maps a database row correctly", () => {
     source_type: "dashboard",
     source_dashboard_id: "d-1",
     source_canvas_id: null,
+    template_id: "tpl-1",
     report_type: "management_report",
     status: "draft",
     workflow_enabled: false,
@@ -129,6 +130,7 @@ test("dbToReportProject maps a database row correctly", () => {
   assert.equal(project.sourceType, "dashboard");
   assert.equal(project.sourceDashboardId, "d-1");
   assert.equal(project.sourceCanvasId, undefined);
+  assert.equal(project.templateId, "tpl-1");
   assert.equal(project.reportType, "management_report");
   assert.equal(project.status, "draft");
   assert.equal(project.createdBy, "u1");
@@ -351,6 +353,7 @@ test("buildReportProjectInsert creates valid insert for dashboard", () => {
     description: " A report ",
     sourceType: "dashboard",
     sourceDashboardId: "d-1",
+    templateId: "tpl-1",
     reportType: "management_report",
   }, "u1");
 
@@ -360,6 +363,7 @@ test("buildReportProjectInsert creates valid insert for dashboard", () => {
   assert.equal(result.data.source_type, "dashboard");
   assert.equal(result.data.source_dashboard_id, "d-1");
   assert.equal(result.data.source_canvas_id, null);
+  assert.equal(result.data.template_id, "tpl-1");
   assert.equal(result.data.created_by, "u1");
   assert.equal(result.data.status, "draft");
 });

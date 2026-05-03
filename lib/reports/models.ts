@@ -86,6 +86,7 @@ export function dbToReportProject(row: Row): ReportProject {
     sourceType: row.source_type as ReportSourceType,
     sourceDashboardId: row.source_dashboard_id ? String(row.source_dashboard_id) : undefined,
     sourceCanvasId: row.source_canvas_id ? String(row.source_canvas_id) : undefined,
+    templateId: row.template_id ? String(row.template_id) : undefined,
     reportType: row.report_type as ReportType,
     status: row.status as ReportProjectStatus,
     workflowEnabled: Boolean(row.workflow_enabled),
@@ -201,6 +202,7 @@ export function buildReportProjectInsert(body: JsonObject, userId: string): { da
   const reportType = isOneOf(body.reportType, REPORT_TYPES) ? body.reportType : "custom_report";
   const sourceDashboardId = optionalString(body.sourceDashboardId);
   const sourceCanvasId = optionalString(body.sourceCanvasId);
+  const templateId = optionalString(body.templateId);
 
   if (body.sourceType === "dashboard" && !sourceDashboardId) {
     return { error: "sourceDashboardId is required for dashboard reports" };
@@ -216,6 +218,7 @@ export function buildReportProjectInsert(body: JsonObject, userId: string): { da
       source_type: body.sourceType,
       source_dashboard_id: body.sourceType === "dashboard" ? sourceDashboardId : null,
       source_canvas_id: body.sourceType === "canvas" ? sourceCanvasId : null,
+      template_id: templateId ?? null,
       report_type: reportType,
       status: "draft",
       created_by: userId,
