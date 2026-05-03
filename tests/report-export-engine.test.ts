@@ -143,8 +143,8 @@ test("renderReportHtmlArtifact encodes HTML bytes", () => {
 test("renderPreviewHtml renders figures as SVG markup instead of escaped text", () => {
   const html = renderPreviewHtml(payload);
 
-  assert.match(html, /<figure class="report-fig" contenteditable="false" data-figure-number="\d+">/);
-  assert.match(html, /<svg viewBox=/);
+  assert.match(html, /<figure class="report-figure">/);
+  assert.match(html, /<svg\b[^>]*\bviewBox=/);
   assert.doesNotMatch(html, /&lt;rect/);
   assert.equal((html.match(/Table of Contents/g) ?? []).length, 1);
   assert.doesNotMatch(html, /Report Metadata/);

@@ -396,19 +396,103 @@ function docxTextParagraph(text: string, heading?: (typeof HeadingLevel)[keyof t
   });
 }
 
-function docxMarkdown(markdown: unknown): Paragraph[] {
+interface DocxTextSegment {
+  text: string;
+  bold?: boolean;
+  italic?: boolean;
+}
+
+function resolveFigurePlaceholders(markdown: unknown, embeddedFigures: unknown[]): { resolvedText: string; referencedFigureNums: Set<number> } {
   const content = looksLikeHtml(markdown) ? plainTextFromRichText(markdown) : String(markdown ?? "");
-  return content
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      if (line.startsWith("### ")) return docxTextParagraph(line.slice(4), HeadingLevel.HEADING_3);
-      if (line.startsWith("## ")) return docxTextParagraph(line.slice(3), HeadingLevel.HEADING_2);
-      if (line.startsWith("# ")) return docxTextParagraph(line.slice(2), HeadingLevel.HEADING_1);
-      if (line.startsWith("- ")) return docxTextParagraph(`• ${line.slice(2)}`);
-      return docxTextParagraph(plainTextFromMarkdown(line));
-    });
+  const figureMap = new Map<number, string>();
+  for (const fig of embeddedFigures) {
+    const f = fig as Record<string, unknown>;
+    const num = Number(f.figure_number);
+    if (!Number.isNaN(num)) {
+      figureMap.set(num, `[Figure ${num}: ${String(f.title ?? "Figure")}]`);
+    }
+  }
+  const referencedNums = new Set<number>();
+  const resolved = content.replace(/\{\{FIGURE:(\d+)\}\}/g, (_match, numStr) => {
+    const num = Number(numStr);
+    const replacement = figureMap.get(num) ?? `[Figure ${numStr} — unavailable]`;
+    referencedNums.add(num);
+    return replacement;
+  });
+  return { resolvedText: resolved, referencedFigureNums: referencedNums };
+}
+
+function docxBoldItalicParagraph(segments: DocxTextSegment[], heading?: (typeof HeadingLevel)[keyof typeof HeadingLevel]): Paragraph {
+  const runs = segments
+    .filter((seg) => seg.text.length > 0)
+    .map((seg) => new TextRun({ text: seg.text, bold: seg.bold ?? false, italics: seg.italic ?? false, font: "Times New Roman", size: heading ? 28 : 22 }));
+  if (runs.length === 0) {
+    runs.push(new TextRun({ text: "", font: "Times New Roman", size: heading ? 28 : 22 }));
+  }
+  return new Paragraph({
+    heading,
+    spacing: { after: heading ? 180 : 120 },
+    children: runs,
+  });
+}
+
+function parseMarkdownBoldItalic(text: string): DocxTextSegment[] {
+  const segments: DocxTextSegment[] = [];
+  const re = /(\*\*(.+?)\*\*)|(\*(.+?)\*)|([^*]+)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    if (m[1] !== undefined) {
+      segments.push({ text: m[2].trim() ? m[2] : "**", bold: true });
+    } else if (m[3] !== undefined) {
+      segments.push({ text: m[4].trim() ? m[4] : "*", italic: true });
+    } else if (m[5] !== undefined && m[5].trim()) {
+      segments.push({ text: m[5] });
+    }
+  }
+  return segments;
+}
+
+function docxContentBlocks(markdown: unknown): Paragraph[] {
+  const content = looksLikeHtml(markdown) ? plainTextFromRichText(markdown) : String(markdown ?? "");
+  const lines = content.split(/\r?\n/);
+  const blocks: Paragraph[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i];
+    const line = raw.trim();
+    if (!line) continue;
+
+    if (line.startsWith("### ")) {
+      const headingText = line.slice(4).trim();
+      blocks.push(docxTextParagraph(headingText, HeadingLevel.HEADING_3));
+      continue;
+    }
+    if (line.startsWith("## ")) {
+      const headingText = line.slice(3).trim();
+      blocks.push(docxTextParagraph(headingText, HeadingLevel.HEADING_2));
+      continue;
+    }
+    if (line.startsWith("# ")) {
+      const headingText = line.slice(2).trim();
+      blocks.push(docxTextParagraph(headingText, HeadingLevel.HEADING_1));
+      continue;
+    }
+    if (line.startsWith("- ") || line.startsWith("* ")) {
+      const bulletText = line.slice(2).trim();
+      const segments = parseMarkdownBoldItalic(bulletText);
+      if (segments.length > 0) {
+        blocks.push(docxBoldItalicParagraph([{ text: "  • " }, ...segments]));
+      }
+      continue;
+    }
+
+    const segments = parseMarkdownBoldItalic(line);
+    if (segments.length > 0) {
+      blocks.push(docxBoldItalicParagraph(segments));
+    }
+  }
+
+  return blocks;
 }
 
 function docxTable(title: string, rows: JsonObject[]): (Paragraph | Table)[] {
@@ -449,23 +533,32 @@ export async function renderReportDocx(payload: JsonObject, options: ReportExpor
 
   for (const section of sections) {
     children.push(docxTextParagraph(String(section.title ?? "Untitled section"), HeadingLevel.HEADING_1));
-    children.push(...docxMarkdown(section.content_markdown));
 
-    // Render figures for this section as tables
-    if (includeCharts) {
-      const record = section as Record<string, unknown>;
-      const embeddedFigures = Array.isArray(record.embedded_figures) ? record.embedded_figures : [];
-      for (const fig of embeddedFigures) {
-        const f = fig as unknown as FigureData;
-        const { rows, columns } = parseTable(f.query_output);
-        const headerColumns = columns.slice(0, 8);
-        children.push(new Paragraph({
-          spacing: { before: 240 },
-          children: [new TextRun({ text: `Figure ${f.figure_number}: ${f.title}`, italics: true, font: "Times New Roman", size: 22 })],
-        }));
-        if (rows.length > 0 && headerColumns.length > 0) {
-          children.push(...docxTable(f.title, rows));
-        }
+    const record = section as Record<string, unknown>;
+    const embeddedFigures = (includeCharts && Array.isArray(record.embedded_figures) ? record.embedded_figures : []) as unknown[];
+
+    // Resolve FIGURE placeholders in content and render the content
+    const { resolvedText, referencedFigureNums } = resolveFigurePlaceholders(section.content_markdown, embeddedFigures);
+    children.push(...docxContentBlocks(resolvedText));
+
+    // Render figures that were referenced inline as data tables + caption
+    // Also render any unreferenced figures at the end of the section
+    for (const fig of embeddedFigures) {
+      const f = fig as unknown as FigureData;
+      const { rows, columns } = parseTable(f.query_output);
+      const headerColumns = columns.slice(0, 8);
+
+      const figureLabel = new Paragraph({
+        spacing: { before: 240 },
+        children: [new TextRun({ text: `Figure ${f.figure_number}: ${f.title}`, italics: true, font: "Times New Roman", size: 22 })],
+      });
+
+      if (rows.length > 0 && headerColumns.length > 0) {
+        children.push(figureLabel);
+        children.push(...docxTable(f.title, rows));
+      } else if (!referencedFigureNums.has(f.figure_number)) {
+        children.push(figureLabel);
+        children.push(docxTextParagraph("No tabular data available."));
       }
     }
   }

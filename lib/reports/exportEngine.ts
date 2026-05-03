@@ -119,6 +119,15 @@ function rowsToSheetData(rows: Record<string, unknown>[]): SheetData {
   ];
 }
 
+function plainText(value: unknown): string {
+  const raw = String(value ?? "");
+  return raw
+    .replace(/<[^>]+>/g, "")
+    .replace(/&[a-z]+;/gi, "")
+    .replace(/\{\{FIGURE:\d+\}\}/g, (match) => `[${match.slice(2, -2)}]`)
+    .trim();
+}
+
 async function renderExcel(payload: JsonObject): Promise<Uint8Array> {
   const metadataRows = Object.entries(asRecord(payload.metadata)).map(([key, value]) => ({
     key,
@@ -128,14 +137,39 @@ async function renderExcel(payload: JsonObject): Promise<Uint8Array> {
   const filters = asRecord(asRecord(payload.scope).active_filters);
   const sheets = [
     {
-      sheet: "Metadata",
+      sheet: sheetName("Metadata", "Metadata"),
       data: rowsToSheetData(metadataRows),
     },
     {
-      sheet: "Filters",
+      sheet: sheetName("Filters", "Filters"),
       data: rowsToSheetData(Object.entries(filters).map(([key, value]) => ({ key, value: JSON.stringify(value) }))),
     },
   ];
+
+  const sections = asRecordArray(payload.sections);
+
+  // Report Narrative sheet
+  const narrativeRows: Record<string, unknown>[] = [];
+  for (const section of sections) {
+    narrativeRows.push({
+      key: "",
+      value: `──── ${String(section.title ?? "Untitled section").toUpperCase()} ────`,
+    });
+    const sectionContent = plainText(section.content_markdown);
+    for (const line of sectionContent.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (trimmed) {
+        narrativeRows.push({ key: "", value: trimmed.slice(0, 2000) });
+      }
+    }
+    narrativeRows.push({ key: "", value: "" });
+  }
+  if (narrativeRows.length > 0) {
+    sheets.push({
+      sheet: sheetName("Report Narrative", "Narrative"),
+      data: rowsToSheetData(narrativeRows),
+    });
+  }
 
   const chartsFigures = asRecordArray(payload.sections)
     .flatMap((section: Record<string, unknown>) => {
@@ -161,7 +195,7 @@ async function renderExcel(payload: JsonObject): Promise<Uint8Array> {
       .flatMap((appendix) => asRecordArray(appendix.content).map((warning) => ({ warning: JSON.stringify(warning) }))),
   ];
   sheets.push({
-    sheet: "Warnings",
+    sheet: sheetName("Warnings", "Warnings"),
     data: rowsToSheetData(warnings.length > 0 ? warnings : [{ warning: "No data quality warnings recorded." }]),
   });
 
