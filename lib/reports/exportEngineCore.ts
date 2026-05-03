@@ -12,6 +12,29 @@ import {
   WidthType,
 } from "docx";
 import { chromium } from "playwright";
+import {
+  esc,
+  nv,
+  axisValue,
+  kpiValue,
+  yAxisTicks,
+  parseChart,
+  parseTable,
+  tableValue,
+  svgBar,
+  svgLine,
+  svgPie,
+  svgArea,
+  figureHtml,
+  looksLikeHtml,
+  sanitizeRichHtml,
+  inlineMd,
+  mdToHtml,
+  richTextToHtml,
+  plainTextFromMarkdown,
+  plainTextFromRichText,
+  shortLabel,
+} from "@/lib/reports/chartRenderer";
 import type { ReportExportFormat } from "@/types";
 
 export type JsonObject = Record<string, unknown>;
@@ -79,334 +102,25 @@ export interface FigureData {
   query_output: JsonObject;
 }
 
-const CHART_COLORS = ["#4ECDC4", "#FF6B6B", "#FFD166", "#118AB2", "#073B4C", "#EF476F", "#06D6A0", "#8338EC"];
-
-function numericValue(value: unknown, fallback: number): number {
-  if (typeof value === "number") return value;
-  const parsed = typeof value === "string" ? parseFloat(value) : NaN;
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-interface ChartRow { label: string; values: number[] }
-
-function shortChartLabel(value: string, max = 18): string {
-  return value.length > max ? `${value.slice(0, Math.max(0, max - 1))}...` : value;
-}
-
-function axisTickLabel(value: number): string {
-  const abs = Math.abs(value);
-  if (abs >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1).replace(/\.0$/, "")}B`;
-  if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
-  if (abs >= 1_000) return `${(value / 1_000).toFixed(1).replace(/\.0$/, "")}K`;
-  return Number.isInteger(value) ? String(value) : value.toFixed(1);
-}
-
-function kpiDisplayValue(value: unknown): { display: string; full: string } {
-  const num = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
-  if (!Number.isFinite(num)) {
-    const text = String(value ?? "—");
-    return { display: text, full: text };
-  }
-  const full = num.toLocaleString(undefined, { maximumFractionDigits: 2 });
-  const abs = Math.abs(num);
-  if (abs >= 1_000_000_000_000) return { display: `${(num / 1_000_000_000_000).toFixed(2).replace(/\.?0+$/, "")}T`, full };
-  if (abs >= 1_000_000_000) return { display: `${(num / 1_000_000_000).toFixed(2).replace(/\.?0+$/, "")}B`, full };
-  if (abs >= 1_000_000) return { display: `${(num / 1_000_000).toFixed(2).replace(/\.?0+$/, "")}M`, full };
-  if (abs >= 100_000) return { display: `${(num / 1_000).toFixed(1).replace(/\.?0+$/, "")}K`, full };
-  return { display: full, full };
-}
-
-function renderYAxisTicks(maxValue: number, padding: { top: number; left: number }, chartW: number, chartH: number): string {
-  const max = Math.max(maxValue, 1);
-  return Array.from({ length: 5 }, (_, index) => {
-    const ratio = index / 4;
-    const value = max * (1 - ratio);
-    const y = padding.top + ratio * chartH;
-    return `<line x1="${padding.left}" y1="${y}" x2="${padding.left + chartW}" y2="${y}" stroke="#edf2f7" stroke-width="1"/><text x="${padding.left - 8}" y="${y + 3}" text-anchor="end" font-size="9" fill="#64748b">${axisTickLabel(value)}</text>`;
-  }).join("");
-}
-
-function summarizeChartRows(rows: ChartRow[], limit = 10): ChartRow[] {
-  if (rows.length <= limit) return rows;
-  const sorted = [...rows].sort((a, b) => b.values.reduce((sum, value) => sum + value, 0) - a.values.reduce((sum, value) => sum + value, 0));
-  const top = sorted.slice(0, limit);
-  const rest = sorted.slice(limit);
-  const others = rest.reduce<number[]>((acc, row) => {
-    row.values.forEach((value, index) => {
-      acc[index] = (acc[index] ?? 0) + value;
-    });
-    return acc;
-  }, []);
-  return [...top, { label: "Others", values: others }];
-}
-
-function parseChartData(queryOutput: JsonObject): { columns: string[]; rows: ChartRow[]; yKeys: string[] } {
-  const rawRows = Array.isArray(queryOutput.rows) ? queryOutput.rows : [];
-  const columns = Array.isArray(queryOutput.columns) ? queryOutput.columns.filter((c): c is string => typeof c === "string") : [];
-  const yKeysRaw = Array.isArray(queryOutput.y_keys) ? queryOutput.y_keys.filter((k): k is string => typeof k === "string") : [];
-  const xKey = typeof queryOutput.x_key === "string" ? queryOutput.x_key : columns[0] ?? "label";
-  const yKeys = yKeysRaw.length > 0 ? yKeysRaw : columns.filter((c) => c !== xKey);
-
-  const rows = summarizeChartRows(rawRows.map((row) => {
-    const record = row && typeof row === "object" && !Array.isArray(row) ? row as Record<string, unknown> : {};
-    return {
-      label: String(record[xKey] ?? ""),
-      values: yKeys.map((key) => numericValue(record[key], 0)),
-    };
-  }));
-
-  return { columns, rows, yKeys };
-}
-
-function parseTableData(queryOutput: JsonObject): { columns: string[]; rows: JsonObject[] } {
-  const rawRows = Array.isArray(queryOutput.rows) ? queryOutput.rows : [];
-  const rows = rawRows.filter((row): row is JsonObject => Boolean(row && typeof row === "object" && !Array.isArray(row)));
-  const configuredColumns = Array.isArray(queryOutput.columns)
-    ? queryOutput.columns.filter((column): column is string => typeof column === "string")
-    : [];
-  const columns = configuredColumns.length > 0
-    ? configuredColumns
-    : Array.from(new Set(rows.flatMap((row) => Object.keys(row))));
-  return { columns, rows };
-}
-
-function tableDisplayValue(value: unknown): string {
-  return typeof value === "number"
-    ? value.toLocaleString(undefined, { maximumFractionDigits: 2 })
-    : String(value ?? "");
-}
-
-function svgTextSizer(value: string, size = 14): number {
-  return value.length * size * 0.6;
-}
-
-function svgBarChart(figure: FigureData, width = 560, height = 340): string {
-  const { rows, yKeys } = parseChartData(figure.query_output);
-  if (rows.length === 0) return `<div class="chart-placeholder">No data available for ${escapeHtml(figure.title)}</div>`;
-
-  const legendRows = Math.max(1, Math.ceil(yKeys.length / 2));
-  const padding = { top: 36, right: 20, bottom: 112 + legendRows * 18, left: 60 };
-  const chartW = width - padding.left - padding.right;
-  const chartH = height - padding.top - padding.bottom;
-  const maxValue = Math.max(...rows.flatMap((r) => r.values), 1);
-  const barGroupWidth = chartW / rows.length;
-  const barWidth = Math.max(4, (barGroupWidth * 0.7) / yKeys.length);
-  const barGap = barGroupWidth * 0.15;
-
-  let bars = "";
-  rows.forEach((row, ri) => {
-    row.values.forEach((value, vi) => {
-      const x = padding.left + ri * barGroupWidth + barGap + vi * barWidth;
-      const barH = Math.max(2, (value / maxValue) * chartH);
-      const y = padding.top + chartH - barH;
-      const color = CHART_COLORS[vi % CHART_COLORS.length];
-      bars += `<rect x="${x}" y="${y}" width="${barWidth}" height="${barH}" fill="${color}" rx="2"/>`;
-    });
-  });
-
-  let xLabels = "";
-  rows.forEach((row, ri) => {
-    const x = padding.left + ri * barGroupWidth + barGroupWidth / 2;
-    const y = padding.top + chartH + 18;
-    xLabels += `<text x="${x}" y="${y}" text-anchor="end" font-size="9" fill="#374151" transform="rotate(-35 ${x} ${y})">${escapeHtml(shortChartLabel(row.label, 14))}</text>`;
-  });
-
-  let legend = "";
-  yKeys.forEach((key, vi) => {
-    const col = vi % 2;
-    const row = Math.floor(vi / 2);
-    const lx = padding.left + col * 230;
-    const ly = padding.top + chartH + 82 + row * 18;
-    legend += `<rect x="${lx}" y="${ly - 8}" width="10" height="10" fill="${CHART_COLORS[vi % CHART_COLORS.length]}" rx="1"/>`;
-    legend += `<text x="${lx + 14}" y="${ly}" font-size="9" fill="#6b7280">${escapeHtml(shortChartLabel(key, 34))}</text>`;
-  });
-
-  const axis = renderYAxisTicks(maxValue, padding, chartW, chartH);
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="100%" style="max-width:560px" role="img" aria-label="${escapeHtml(figure.title)}">
-    ${axis}
-    <line x1="${padding.left}" y1="${padding.top}" x2="${padding.left}" y2="${padding.top + chartH}" stroke="#cbd5e1" stroke-width="1"/>
-    <line x1="${padding.left}" y1="${padding.top + chartH}" x2="${padding.left + chartW}" y2="${padding.top + chartH}" stroke="#cbd5e1" stroke-width="1"/>
-    ${bars}
-    ${xLabels}
-    ${legend}
-  </svg>`;
-}
-
-function svgLineChart(figure: FigureData, width = 560, height = 340): string {
-  const { rows, yKeys } = parseChartData(figure.query_output);
-  if (rows.length === 0) return `<div class="chart-placeholder">No data available for ${escapeHtml(figure.title)}</div>`;
-
-  const padding = { top: 20, right: 20, bottom: 60, left: 60 };
-  const chartW = width - padding.left - padding.right;
-  const chartH = height - padding.top - padding.bottom;
-  const allValues = rows.flatMap((r) => r.values);
-  const maxValue = Math.max(...allValues, 1);
-
-  const lines: string[] = [];
-  yKeys.forEach((_, vi) => {
-    const points = rows.map((row, ri) => {
-      const x = padding.left + (ri / Math.max(rows.length - 1, 1)) * chartW;
-      const y = padding.top + chartH - (row.values[vi] / maxValue) * chartH;
-      return `${x},${y}`;
-    });
-    const color = CHART_COLORS[vi % CHART_COLORS.length];
-    lines.push(`<polyline points="${points.join(" ")}" fill="none" stroke="${color}" stroke-width="2"/>`);
-    rows.forEach((row, ri) => {
-      const x = padding.left + (ri / Math.max(rows.length - 1, 1)) * chartW;
-      const y = padding.top + chartH - (row.values[vi] / maxValue) * chartH;
-      lines.push(`<circle cx="${x}" cy="${y}" r="3" fill="${color}"/>`);
-    });
-  });
-
-  const skipLabels = rows.length > 12 ? Math.ceil(rows.length / 8) : 1;
-  let xLabels = "";
-  rows.forEach((row, ri) => {
-    if (ri % skipLabels !== 0 && ri !== rows.length - 1) return;
-    const x = padding.left + (ri / Math.max(rows.length - 1, 1)) * chartW;
-    xLabels += `<text x="${x}" y="${padding.top + chartH + 20}" text-anchor="middle" font-size="11" fill="#374151">${escapeHtml(row.label.slice(0, 16))}</text>`;
-  });
-
-  const axis = renderYAxisTicks(maxValue, padding, chartW, chartH);
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="100%" style="max-width:560px" role="img" aria-label="${escapeHtml(figure.title)}">
-    ${axis}
-    <line x1="${padding.left}" y1="${padding.top}" x2="${padding.left}" y2="${padding.top + chartH}" stroke="#cbd5e1" stroke-width="1"/>
-    <line x1="${padding.left}" y1="${padding.top + chartH}" x2="${padding.left + chartW}" y2="${padding.top + chartH}" stroke="#cbd5e1" stroke-width="1"/>
-    ${lines.join("\n    ")}
-    ${xLabels}
-  </svg>`;
-}
-
-function svgPieChart(figure: FigureData, width = 640, height = 360): string {
-  const { rows, yKeys } = parseChartData(figure.query_output);
-  if (rows.length === 0) return `<div class="chart-placeholder">No data available for ${escapeHtml(figure.title)}</div>`;
-
-  const cx = 170;
-  const cy = height / 2;
-  const r = 125;
-  const values = rows.map((row) => row.values[0] ?? 0);
-  const total = Math.max(values.reduce((sum, v) => sum + v, 0), 1);
-
-  let cumulative = 0;
-  let slices = "";
-  let legend = "";
-  rows.forEach((row, index) => {
-    const value = values[index];
-    if (value <= 0) return;
-    const startAngle = (cumulative / total) * 2 * Math.PI - Math.PI / 2;
-    cumulative += value;
-    const endAngle = (cumulative / total) * 2 * Math.PI - Math.PI / 2;
-
-    const x1 = cx + r * Math.cos(startAngle);
-    const y1 = cy + r * Math.sin(startAngle);
-    const x2 = cx + r * Math.cos(endAngle);
-    const y2 = cy + r * Math.sin(endAngle);
-    const largeArc = value / total > 0.5 ? 1 : 0;
-
-    slices += `<path d="M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z" fill="${CHART_COLORS[index % CHART_COLORS.length]}" stroke="#fff" stroke-width="1"/>`;
-
-    const ly = 72 + index * 18;
-    legend += `<rect x="340" y="${ly - 8}" width="9" height="9" fill="${CHART_COLORS[index % CHART_COLORS.length]}" rx="1"/>`;
-    legend += `<text x="354" y="${ly}" font-size="10" fill="#475569">${escapeHtml(shortChartLabel(row.label, 34))} (${Math.round(value / total * 100)}%)</text>`;
-  });
-
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="100%" style="max-width:640px" role="img" aria-label="${escapeHtml(figure.title)}">
-    ${slices}
-    ${legend}
-  </svg>`;
-}
-
-function svgAreaChart(figure: FigureData, width = 560, height = 340): string {
-  const { rows, yKeys } = parseChartData(figure.query_output);
-  if (rows.length === 0) return `<div class="chart-placeholder">No data available for ${escapeHtml(figure.title)}</div>`;
-
-  const padding = { top: 20, right: 20, bottom: 60, left: 60 };
-  const chartW = width - padding.left - padding.right;
-  const chartH = height - padding.top - padding.bottom;
-  const allValues = rows.flatMap((r) => r.values);
-  const maxValue = Math.max(...allValues, 1);
-
-  yKeys.forEach((_, vi) => {
-    // TODO: implement stacked area for multi-yKey
-  });
-
-  // Single or stacked area
-  const areas: string[] = [];
-  const cumulative = rows.map(() => 0);
-  yKeys.forEach((_, vi) => {
-    const points = rows.map((row, ri) => {
-      const y = padding.top + chartH - ((row.values[vi] + cumulative[ri]) / maxValue) * chartH;
-      cumulative[ri] += row.values[vi];
-      const x = padding.left + (ri / Math.max(rows.length - 1, 1)) * chartW;
-      return `${x},${y}`;
-    });
-    const areaPoints = [...points];
-    if (rows.length > 1) {
-      areaPoints.push(
-        `${padding.left + chartW},${padding.top + chartH}`,
-        `${padding.left},${padding.top + chartH}`
-      );
-    }
-    const color = CHART_COLORS[vi % CHART_COLORS.length];
-    areas.push(`<path d="M ${points.join(" L ")} L ${areaPoints[areaPoints.length - 3]} L ${areaPoints[areaPoints.length - 2]} L ${areaPoints[areaPoints.length - 1]} Z" fill="${color}" opacity="0.3"/>`);
-    areas.push(`<polyline points="${points.join(" ")}" fill="none" stroke="${color}" stroke-width="2"/>`);
-  });
-
-  const axis = renderYAxisTicks(maxValue, padding, chartW, chartH);
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="100%" style="max-width:560px" role="img" aria-label="${escapeHtml(figure.title)}">
-    ${axis}
-    <line x1="${padding.left}" y1="${padding.top}" x2="${padding.left}" y2="${padding.top + chartH}" stroke="#cbd5e1" stroke-width="1"/>
-    <line x1="${padding.left}" y1="${padding.top + chartH}" x2="${padding.left + chartW}" y2="${padding.top + chartH}" stroke="#cbd5e1" stroke-width="1"/>
-    ${areas.join("\n    ")}
-  </svg>`;
-}
-
-function renderFigureHtml(figure: FigureData): string {
-  const chartType = String(figure.visual_config.chartType ?? figure.widget_type ?? "table");
-  let chartHtml = "";
-
-  if (chartType.includes("pie")) {
-    chartHtml = svgPieChart(figure);
-  } else if (chartType.includes("bar")) {
-    chartHtml = svgBarChart(figure);
-  } else if (chartType.includes("line")) {
-    chartHtml = svgLineChart(figure);
-  } else if (chartType.includes("area")) {
-    chartHtml = svgAreaChart(figure);
-  } else if (chartType === "kpi") {
-    const { rows, yKeys } = parseChartData(figure.query_output);
-    const row = rows[0];
-    chartHtml = `<div class="kpi-grid">${yKeys.map((key, index) => {
-      const value = kpiDisplayValue(row?.values[index] ?? 0);
-      return `<div class="kpi-box"><span class="kpi-label" title="${escapeHtml(key)}">${escapeHtml(key)}</span><span class="kpi-value" title="${escapeHtml(value.full)}">${escapeHtml(value.display)}</span></div>`;
-    }).join("")}</div>`;
-  } else {
-    // table or unknown — render as data table
-    const { rows, columns } = parseTableData(figure.query_output);
-    const headers = columns.slice(0, 8);
-    chartHtml = `<table class="figure-table"><thead><tr>${headers.map((h) => `<th>${escapeHtml(h)}</th>`).join("")}</tr></thead><tbody>${rows.slice(0, 50).map((row) => `<tr>${headers.map((h) => `<td>${escapeHtml(tableDisplayValue(row[h]))}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
-  }
-
-  return `<figure class="report-figure">
-    ${chartHtml}
-    <figcaption>Figure ${figure.figure_number}: ${escapeHtml(figure.title)}</figcaption>
-  </figure>`;
-}
+// These formerly-duplicated helpers are now imported from chartRenderer:
+// esc, nv, axisValue, kpiValue, yAxisTicks, parseChart, parseTable,
+// tableValue, svgBar, svgLine, svgPie, svgArea, figureHtml,
+// looksLikeHtml, sanitizeRichHtml, inlineMd, mdToHtml, richTextToHtml,
+// plainTextFromMarkdown, plainTextFromRichText, shortLabel
 
 function renderFigureDocxImage(figure: FigureData): string {
-  // Return inline SVG as a fallback for DOCX — Playwright screenshot will replace this
-  // when rendered via PDF pipeline. For pure DOCX, we render a simple table.
-  const { rows, columns, yKeys } = parseChartData(figure.query_output);
+  const { rows, yKeys } = parseChart(figure.query_output);
   const value = rows.length > 0 && yKeys.length > 0 ? rows[0].values[0] : 0;
   const label = yKeys[0] ?? "Value";
 
   return `<w:p>
     <w:pPr><w:pStyle w:val="Caption"/></w:pPr>
-    <w:r><w:t xml:space="preserve">Figure ${figure.figure_number}: ${xmlEscape(figure.title)} — ${value.toLocaleString()} ${xmlEscape(label)}</w:t></w:r>
+    <w:r><w:t xml:space="preserve">Figure ${figure.figure_number}: ${xmlEscape(figure.title)} \u2014 ${value.toLocaleString()} ${xmlEscape(label)}</w:t></w:r>
   </w:p>`;
 }
 
 export function renderInlineSvgForFigure(figure: FigureData): string {
-  return renderFigureHtml(figure);
+  return figureHtml(figure as unknown as Record<string, unknown>);
 }
 
 export function collectFigures(sections: unknown[]): FigureData[] {
@@ -450,127 +164,8 @@ export function shouldIncludeCharts(options: ReportExportOptions = {}): boolean 
   return options.include_charts ?? options.includeCharts ?? true;
 }
 
-function escapeHtml(value: unknown): string {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-function markdownToHtml(markdown: unknown): string {
-  const lines = String(markdown ?? "").split(/\r?\n/);
-  const html: string[] = [];
-  let listOpen = false;
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) {
-      if (listOpen) {
-        html.push("</ul>");
-        listOpen = false;
-      }
-      continue;
-    }
-    if (trimmed.startsWith("### ")) {
-      if (listOpen) {
-        html.push("</ul>");
-        listOpen = false;
-      }
-      html.push(`<h3>${inlineMarkdown(trimmed.slice(4))}</h3>`);
-    } else if (trimmed.startsWith("## ")) {
-      if (listOpen) {
-        html.push("</ul>");
-        listOpen = false;
-      }
-      html.push(`<h2>${inlineMarkdown(trimmed.slice(3))}</h2>`);
-    } else if (trimmed.startsWith("# ")) {
-      if (listOpen) {
-        html.push("</ul>");
-        listOpen = false;
-      }
-      html.push(`<h1>${inlineMarkdown(trimmed.slice(2))}</h1>`);
-    } else if (trimmed.startsWith("- ")) {
-      if (!listOpen) {
-        html.push("<ul>");
-        listOpen = true;
-      }
-      html.push(`<li>${inlineMarkdown(trimmed.slice(2))}</li>`);
-    } else {
-      if (listOpen) {
-        html.push("</ul>");
-        listOpen = false;
-      }
-      html.push(`<p>${inlineMarkdown(trimmed)}</p>`);
-    }
-  }
-
-  if (listOpen) html.push("</ul>");
-  return html.join("\n");
-}
-
-function looksLikeHtml(value: unknown): boolean {
-  return /<\/?(p|h[1-6]|ul|ol|li|strong|b|em|i|u|span|font|br)\b/i.test(String(value ?? ""));
-}
-
-function sanitizeRichHtml(html: unknown): string {
-  let value = String(html ?? "")
-    .replace(/<script[\s\S]*?<\/script>/gi, "")
-    .replace(/<style[\s\S]*?<\/style>/gi, "")
-    .replace(/\son\w+="[^"]*"/gi, "")
-    .replace(/\son\w+='[^']*'/gi, "")
-    .replace(/\son\w+=\S+/gi, "")
-    .replace(/\s(href|src)="[^"]*"/gi, "")
-    .replace(/\s(href|src)='[^']*'/gi, "");
-
-  value = value.replace(/<\/?([a-z][a-z0-9]*)\b([^>]*)>/gi, (match, tag, attrs) => {
-    const name = String(tag).toLowerCase();
-    if (!["p", "h1", "h2", "h3", "ul", "ol", "li", "strong", "b", "em", "i", "u", "span", "font", "br"].includes(name)) {
-      return "";
-    }
-    if (match.startsWith("</")) return `</${name}>`;
-    if (name === "br") return "<br>";
-    const styleMatch = String(attrs).match(/\sstyle=(["'])(.*?)\1/i);
-    const style = styleMatch?.[2] ?? "";
-    const fontSize = style.match(/font-size:\s*(\d+(?:\.\d+)?)(px|pt)/i);
-    const sizeAttr = String(attrs).match(/\ssize=(["'])([1-7])\1/i);
-    const safeStyle = fontSize ? ` style="font-size:${fontSize[1]}${fontSize[2].toLowerCase()}"` : "";
-    const fontAttr = name === "font" && sizeAttr ? ` size="${sizeAttr[2]}"` : "";
-    return `<${name}${safeStyle}${fontAttr}>`;
-  });
-
-  return value;
-}
-
-function richTextToHtml(content: unknown): string {
-  return looksLikeHtml(content) ? sanitizeRichHtml(content) : markdownToHtml(content);
-}
-
-function inlineMarkdown(value: unknown): string {
-  return escapeHtml(value)
-    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-    .replace(/\*(.+?)\*/g, "<em>$1</em>")
-    .replace(/`(.+?)`/g, "<code>$1</code>")
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-    .replace(/\*+/g, "");
-}
-
-function plainTextFromMarkdown(value: unknown): string {
-  return String(value ?? "")
-    .replace(/^#{1,6}\s+/gm, "")
-    .replace(/^\s*-\s+/gm, "• ")
-    .replace(/\*\*(.*?)\*\*/g, "$1")
-    .replace(/\*(.*?)\*/g, "$1")
-    .replace(/\[(.*?)\]\(.*?\)/g, "$1");
-}
-
-function plainTextFromRichText(value: unknown): string {
-  return plainTextFromMarkdown(String(value ?? "")
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/(p|h[1-6]|li)>/gi, "\n")
-    .replace(/<li[^>]*>/gi, "• ")
-    .replace(/<[^>]+>/g, ""));
-}
+// NOTE: escapeHtml, markdownToHtml, looksLikeHtml, sanitizeRichHtml, richTextToHtml,
+// inlineMarkdown, plainTextFromMarkdown, plainTextFromRichText are now imported from chartRenderer.
 
 export function renderReportHtml(payload: JsonObject, options: ReportExportOptions = {}): string {
   const title = titleFromPayload(payload);
@@ -582,7 +177,6 @@ export function renderReportHtml(payload: JsonObject, options: ReportExportOptio
     const content = String(section.content_markdown ?? "");
     let rendered = richTextToHtml(content);
 
-    // Replace {{FIGURE:N}} placeholders with inline SVGs
     if (includeCharts) {
       const record = section as Record<string, unknown>;
       const embeddedFigures = Array.isArray(record.embedded_figures) ? record.embedded_figures : [];
@@ -591,12 +185,11 @@ export function renderReportHtml(payload: JsonObject, options: ReportExportOptio
           const obj = f as Record<string, unknown>;
           return obj.figure_number === Number(num);
         });
-        if (fig) return renderFigureHtml(fig as unknown as FigureData);
+        if (fig) return figureHtml(fig as unknown as Record<string, unknown>);
         return `[Figure ${num} not found]`;
       });
     }
 
-    // Any figures not referenced via {{FIGURE:N}} go at the end
     if (includeCharts) {
       const record = section as Record<string, unknown>;
       const embeddedFigures = Array.isArray(record.embedded_figures) ? record.embedded_figures : [];
@@ -611,12 +204,12 @@ export function renderReportHtml(payload: JsonObject, options: ReportExportOptio
         return !referencedNums.has(obj.figure_number as number);
       });
       for (const fig of trailing) {
-        rendered += renderFigureHtml(fig as unknown as FigureData);
+        rendered += figureHtml(fig as unknown as Record<string, unknown>);
       }
     }
 
     return `<section>
-    <h2>${escapeHtml(String(section.title ?? "Untitled section"))}</h2>
+    <h2>${esc(String(section.title ?? "Untitled section"))}</h2>
     ${rendered}
   </section>`;
   }).join("\n");
@@ -625,7 +218,7 @@ export function renderReportHtml(payload: JsonObject, options: ReportExportOptio
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>${escapeHtml(title)}</title>
+  <title>${esc(title)}</title>
   <style>
     body { color: #111827; font-family: "Times New Roman", Times, serif; font-size: 11pt; line-height: 1.55; margin: 48px; }
     h1, h2, h3 { line-height: 1.2; }
@@ -652,10 +245,10 @@ export function renderReportHtml(payload: JsonObject, options: ReportExportOptio
   </style>
 </head>
 <body>
-  <h1>${escapeHtml(title)}</h1>
+  <h1>${esc(title)}</h1>
   <h2>Table Of Contents</h2>
   <ol class="toc">
-    ${sections.map((section) => `<li>${escapeHtml(section.title)}</li>`).join("\n    ")}
+    ${sections.map((section) => `<li>${esc(section.title)}</li>`).join("\n    ")}
   </ol>
   ${sectionHtml}
 </body>
@@ -710,7 +303,7 @@ export function renderReportText(payload: JsonObject, options: ReportExportOptio
 }
 
 function xmlEscape(value: unknown): string {
-  return escapeHtml(value).replace(/'/g, "&apos;");
+  return esc(value).replace(/'/g, "&apos;");
 }
 
 function docxParagraph(text: string, style?: string): string {
@@ -864,7 +457,7 @@ export async function renderReportDocx(payload: JsonObject, options: ReportExpor
       const embeddedFigures = Array.isArray(record.embedded_figures) ? record.embedded_figures : [];
       for (const fig of embeddedFigures) {
         const f = fig as unknown as FigureData;
-        const { rows, columns } = parseTableData(f.query_output);
+        const { rows, columns } = parseTable(f.query_output);
         const headerColumns = columns.slice(0, 8);
         children.push(new Paragraph({
           spacing: { before: 240 },

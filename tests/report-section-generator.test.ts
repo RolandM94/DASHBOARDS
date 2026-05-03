@@ -70,7 +70,7 @@ test("system prompt forbids invented figures and requires JSON output", () => {
 test("buildSectionInputPackage includes only linked source records and query outputs", () => {
   const inputPackage = buildSectionInputPackage(section, blueprint, snapshot, {
     instructions: "Keep this brief.",
-  });
+  }) as Record<string, Record<string, unknown>>;
 
   assert.deepEqual(inputPackage.report, {
     title: "Monthly Sales Report",
@@ -78,12 +78,13 @@ test("buildSectionInputPackage includes only linked source records and query out
     audience: "Leadership",
     blueprint_status: "approved",
   });
-  assert.equal(inputPackage.section.user_instructions, "Keep this brief.");
-  assert.deepEqual(inputPackage.source_snapshot.active_filters, { region: ["North"] });
-  assert.deepEqual(inputPackage.source_data.widgets.map((widget) => widget.id), ["widget-1"]);
-  assert.deepEqual(inputPackage.source_data.worksheets.map((worksheet) => worksheet.id), ["worksheet-1"]);
-  assert.deepEqual(inputPackage.source_data.insights.map((insight) => insight.id), ["insight-1"]);
-  assert.deepEqual(Object.keys(inputPackage.source_data.query_outputs), ["widget-1"]);
+  assert.equal((inputPackage.section as Record<string, unknown>).user_instructions, "Keep this brief.");
+  assert.deepEqual((inputPackage.source_snapshot as Record<string, unknown>).active_filters, { region: ["North"] });
+  const sourceData = inputPackage.source_data as unknown as { widgets: Record<string, unknown>[]; worksheets: Record<string, unknown>[]; insights: Record<string, unknown>[]; query_outputs: Record<string, unknown> };
+  assert.deepEqual(sourceData.widgets.map((widget: Record<string, unknown>) => widget.id), ["widget-1"]);
+  assert.deepEqual(sourceData.worksheets.map((worksheet: Record<string, unknown>) => worksheet.id), ["worksheet-1"]);
+  assert.deepEqual(sourceData.insights.map((insight: Record<string, unknown>) => insight.id), ["insight-1"]);
+  assert.deepEqual(Object.keys(sourceData.query_outputs), ["widget-1"]);
 });
 
 test("parseGeneratedSection accepts fenced JSON and normalizes optional arrays", () => {

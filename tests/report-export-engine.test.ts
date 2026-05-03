@@ -215,7 +215,7 @@ test("KPI figures render compact multi-metric cards", () => {
         "Average % Completed": 55.9011,
       }],
     },
-  };
+  } as any;
 
   const preview = renderPreviewHtml(kpiPayload);
   const html = renderReportHtml(kpiPayload);
@@ -248,7 +248,7 @@ test("table figures render row data instead of blank cells", () => {
         },
       ],
     },
-  };
+  } as any;
 
   const preview = renderPreviewHtml(tablePayload);
   const html = renderReportHtml(tablePayload);
@@ -278,7 +278,7 @@ test("chart legends reserve space and avoid overlapping chart labels", () => {
     "Total Appropriation": 1000 - index * 40,
     "Amount Spent (Utilized)": 400 - index * 20,
     "Amount Released (Current Year)": 600 - index * 25,
-  }));
+  })) as any;
 
   const preview = renderPreviewHtml(chartPayload);
   const html = renderReportHtml(chartPayload);

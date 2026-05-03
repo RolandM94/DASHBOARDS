@@ -12,7 +12,7 @@ export async function GET(
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
 
-  const template = await getTemplate(supabase, id);
+  const template = await getTemplate(supabase, id, user.id);
   if (!template) return NextResponse.json({ error: "Template not found" }, { status: 404 });
   return NextResponse.json(template);
 }
@@ -28,7 +28,7 @@ export async function PATCH(
 
   try {
     const body = await request.json() as Record<string, unknown>;
-    const template = await updateTemplate(supabase, id, body);
+    const template = await updateTemplate(supabase, id, body, user.id);
     return NextResponse.json(template);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not update template";
@@ -46,7 +46,7 @@ export async function DELETE(
   if (!user) return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
 
   try {
-    await deleteTemplate(supabase, id);
+    await deleteTemplate(supabase, id, user.id);
     return NextResponse.json({ status: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not delete template";

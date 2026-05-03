@@ -35,7 +35,7 @@ export async function POST(
       instructions: body.instructions,
       audience: body.audience,
       reportType: requestedReportType as ReportType | undefined,
-    });
+    }, user.id);
 
     await updateProgress("Blueprint generated", 1, 1);
 

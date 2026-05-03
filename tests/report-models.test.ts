@@ -358,14 +358,14 @@ test("buildReportProjectInsert creates valid insert for dashboard", () => {
   }, "u1");
 
   assert.equal(result.error, undefined);
-  assert.equal(result.data.name, "Sales Report");
-  assert.equal(result.data.description, "A report");
-  assert.equal(result.data.source_type, "dashboard");
-  assert.equal(result.data.source_dashboard_id, "d-1");
-  assert.equal(result.data.source_canvas_id, null);
-  assert.equal(result.data.template_id, "tpl-1");
-  assert.equal(result.data.created_by, "u1");
-  assert.equal(result.data.status, "draft");
+  assert.equal(result.data!.name, "Sales Report");
+  assert.equal(result.data!.description, "A report");
+  assert.equal(result.data!.source_type, "dashboard");
+  assert.equal(result.data!.source_dashboard_id, "d-1");
+  assert.equal(result.data!.source_canvas_id, null);
+  assert.equal(result.data!.template_id, "tpl-1");
+  assert.equal(result.data!.created_by, "u1");
+  assert.equal(result.data!.status, "draft");
 });
 
 test("buildReportProjectInsert creates valid insert for canvas", () => {
@@ -376,9 +376,9 @@ test("buildReportProjectInsert creates valid insert for canvas", () => {
   }, "u1");
 
   assert.equal(result.error, undefined);
-  assert.equal(result.data.source_type, "canvas");
-  assert.equal(result.data.source_canvas_id, "c-1");
-  assert.equal(result.data.source_dashboard_id, null);
+  assert.equal(result.data!.source_type, "canvas");
+  assert.equal(result.data!.source_canvas_id, "c-1");
+  assert.equal(result.data!.source_dashboard_id, null);
 });
 
 test("buildReportProjectInsert defaults reportType to custom_report", () => {
@@ -388,7 +388,7 @@ test("buildReportProjectInsert defaults reportType to custom_report", () => {
     sourceDashboardId: "d-1",
   }, "u1");
 
-  assert.equal(result.data.report_type, "custom_report");
+  assert.equal(result.data!.report_type, "custom_report");
 });
 
 // ── buildReportProjectPatch ──────────────────────────────────────────────────
@@ -409,9 +409,9 @@ test("buildReportProjectPatch patches name, description, reportType", () => {
     reportType: "technical_report",
   });
 
-  assert.equal(result.data.name, "Updated Name");
-  assert.equal(result.data.description, "Updated desc");
-  assert.equal(result.data.report_type, "technical_report");
+  assert.equal(result.data!.name, "Updated Name");
+  assert.equal(result.data!.description, "Updated desc");
+  assert.equal(result.data!.report_type, "technical_report");
 });
 
 test("buildReportProjectPatch rejects invalid reportType", () => {
@@ -425,8 +425,8 @@ test("buildReportProjectPatch patches status and workflowEnabled", () => {
     workflowEnabled: true,
   });
 
-  assert.equal(result.data.status, "generated");
-  assert.equal(result.data.workflow_enabled, true);
+  assert.equal(result.data!.status, "generated");
+  assert.equal(result.data!.workflow_enabled, true);
 });
 
 test("buildReportProjectPatch rejects invalid status", () => {
@@ -443,12 +443,12 @@ test("buildReportBlueprintInsert validates required title", () => {
 
 test("buildReportBlueprintInsert creates valid insert with defaults", () => {
   const result = buildReportBlueprintInsert({ title: "My Blueprint" }, "p1", 1);
-  assert.equal(result.data.report_project_id, "p1");
-  assert.equal(result.data.version, 1);
-  assert.equal(result.data.status, "draft");
-  assert.equal(result.data.title, "My Blueprint");
-  assert.equal(result.data.generated_by_ai, false);
-  assert.deepEqual(result.data.blueprint_json, {});
+  assert.equal(result.data!.report_project_id, "p1");
+  assert.equal(result.data!.version, 1);
+  assert.equal(result.data!.status, "draft");
+  assert.equal(result.data!.title, "My Blueprint");
+  assert.equal(result.data!.generated_by_ai, false);
+  assert.deepEqual(result.data!.blueprint_json, {});
 });
 
 test("buildReportBlueprintInsert accepts all optional fields", () => {
@@ -463,19 +463,19 @@ test("buildReportBlueprintInsert accepts all optional fields", () => {
     approvedAt: "2026-05-01T10:00:00Z",
   }, "p1", 3);
 
-  assert.equal(result.data.status, "approved");
-  assert.equal(result.data.objective, "Objective");
-  assert.equal(result.data.audience, "Audience");
-  assert.equal(result.data.generated_by_ai, true);
-  assert.equal(result.data.approved_by, "u1");
+  assert.equal(result.data!.status, "approved");
+  assert.equal(result.data!.objective, "Objective");
+  assert.equal(result.data!.audience, "Audience");
+  assert.equal(result.data!.generated_by_ai, true);
+  assert.equal(result.data!.approved_by, "u1");
 });
 
 // ── buildReportBlueprintPatch ────────────────────────────────────────────────
 
 test("buildReportBlueprintPatch patches status and title", () => {
   const result = buildReportBlueprintPatch({ status: "locked", title: "Locked Title" });
-  assert.equal(result.data.status, "locked");
-  assert.equal(result.data.title, "Locked Title");
+  assert.equal(result.data!.status, "locked");
+  assert.equal(result.data!.title, "Locked Title");
 });
 
 test("buildReportBlueprintPatch rejects invalid status", () => {
@@ -511,13 +511,13 @@ test("buildReportSectionInsert creates valid insert with all fields", () => {
     status: "pending",
   }, "p1");
 
-  assert.equal(result.data.report_project_id, "p1");
-  assert.equal(result.data.section_key, "exec-summary");
-  assert.equal(result.data.title, "Executive Summary");
-  assert.equal(result.data.section_type, "executive_summary");
-  assert.equal(result.data.order_index, 0);
-  assert.deepEqual(result.data.source_widget_ids, ["w1"]);
-  assert.equal(result.data.status, "pending");
+  assert.equal(result.data!.report_project_id, "p1");
+  assert.equal(result.data!.section_key, "exec-summary");
+  assert.equal(result.data!.title, "Executive Summary");
+  assert.equal(result.data!.section_type, "executive_summary");
+  assert.equal(result.data!.order_index, 0);
+  assert.deepEqual(result.data!.source_widget_ids, ["w1"]);
+  assert.equal(result.data!.status, "pending");
 });
 
 // ── buildReportSectionPatch ──────────────────────────────────────────────────
@@ -530,10 +530,10 @@ test("buildReportSectionPatch patches section content", () => {
     editedContent: "Edited content",
   });
 
-  assert.equal(result.data.title, "Updated Title");
-  assert.equal(result.data.status, "edited");
-  assert.equal(result.data.generated_content, "Content");
-  assert.equal(result.data.edited_content, "Edited content");
+  assert.equal(result.data!.title, "Updated Title");
+  assert.equal(result.data!.status, "edited");
+  assert.equal(result.data!.generated_content, "Content");
+  assert.equal(result.data!.edited_content, "Edited content");
 });
 
 test("buildReportSectionPatch returns error for no fields", () => {
@@ -548,15 +548,15 @@ test("buildReportExportInsert validates format", () => {
 
 test("buildReportExportInsert creates valid insert with defaults", () => {
   const result = buildReportExportInsert({ format: "docx" }, "p1", "u1");
-  assert.equal(result.data.report_project_id, "p1");
-  assert.equal(result.data.format, "docx");
-  assert.equal(result.data.status, "pending");
-  assert.equal(result.data.exported_by, null);
+  assert.equal(result.data!.report_project_id, "p1");
+  assert.equal(result.data!.format, "docx");
+  assert.equal(result.data!.status, "pending");
+  assert.equal(result.data!.exported_by, null);
 });
 
 test("buildReportExportInsert sets exported_by when status is exported", () => {
   const result = buildReportExportInsert({ format: "pdf", status: "exported" }, "p1", "u1");
-  assert.equal(result.data.exported_by, "u1");
+  assert.equal(result.data!.exported_by, "u1");
 });
 
 // ── buildReportExportPatch ───────────────────────────────────────────────────
@@ -568,9 +568,9 @@ test("buildReportExportPatch patches export fields", () => {
     filePath: "exports/e1.pdf",
   });
 
-  assert.equal(result.data.status, "exported");
-  assert.equal(result.data.file_url, "/download/e1.pdf");
-  assert.equal(result.data.file_path, "exports/e1.pdf");
+  assert.equal(result.data!.status, "exported");
+  assert.equal(result.data!.file_url, "/download/e1.pdf");
+  assert.equal(result.data!.file_path, "exports/e1.pdf");
 });
 
 test("buildReportExportPatch validates format", () => {
@@ -589,11 +589,11 @@ test("buildReportJobInsert validates job type", () => {
 
 test("buildReportJobInsert creates valid insert with defaults", () => {
   const result = buildReportJobInsert({ reportProjectId: "p1", jobType: "generate_blueprint" });
-  assert.equal(result.data.report_project_id, "p1");
-  assert.equal(result.data.job_type, "generate_blueprint");
-  assert.equal(result.data.status, "queued");
-  assert.equal(result.data.progress_percent, 0);
-  assert.equal(result.data.total_steps, 1);
+  assert.equal(result.data!.report_project_id, "p1");
+  assert.equal(result.data!.job_type, "generate_blueprint");
+  assert.equal(result.data!.status, "queued");
+  assert.equal(result.data!.progress_percent, 0);
+  assert.equal(result.data!.total_steps, 1);
 });
 
 // ── buildReportJobPatch ──────────────────────────────────────────────────────
@@ -607,11 +607,11 @@ test("buildReportJobPatch patches running status and progress", () => {
     totalSteps: 4,
   });
 
-  assert.equal(result.data.status, "running");
-  assert.equal(result.data.progress_percent, 50);
-  assert.equal(result.data.current_step, "Processing");
-  assert.equal(result.data.completed_steps, 2);
-  assert.equal(result.data.total_steps, 4);
+  assert.equal(result.data!.status, "running");
+  assert.equal(result.data!.progress_percent, 50);
+  assert.equal(result.data!.current_step, "Processing");
+  assert.equal(result.data!.completed_steps, 2);
+  assert.equal(result.data!.total_steps, 4);
 });
 
 test("buildReportJobPatch rejects invalid status", () => {

@@ -16,7 +16,7 @@ export async function GET(
   if (!user) return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
 
   try {
-    const docs = await getTemplateDocuments(supabase, id);
+    const docs = await getTemplateDocuments(supabase, id, user.id);
     return NextResponse.json(docs);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not fetch documents";

@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   BarChart3,
+  Brain,
   FileText,
+  FileUp,
   Image as ImageIcon,
   LayoutDashboard,
   Loader2,
@@ -16,6 +18,7 @@ import {
   Trash2,
   Type,
   Upload,
+  Wand2,
   X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -122,28 +125,6 @@ function makeSlot(type: SlotType): TemplateLayoutSection["layout"]["rows"][numbe
   return { type, width: 12, prompt: "Describe the narrative this text block should cover." };
 }
 
-function templateFromReference(text: string, settings = DEFAULT_SETTINGS): TemplateLayoutSection[] {
-  const sectionMatches = Array.from(text.matchAll(/(?:^|\n)\s*(?:\d+[\.)]\s+|#{1,3}\s+)?([A-Z][A-Za-z0-9&/%\-\s]{4,70})(?=\n|$)/g))
-    .map((match) => match[1].trim())
-    .filter((title) => !/^(table of contents|content blocks|configuration|decisions)$/i.test(title));
-  const fallback = ["Overview", "Financial Performance", "Project Status", "Key Findings", "Recommendations"];
-  const titles = Array.from(new Set(sectionMatches)).slice(0, 7);
-  const chosen = titles.length >= 3 ? titles : fallback;
-
-  return chosen.map((title, index) => ({
-    section_key: sectionKey(title, `section-${index + 1}`),
-    title,
-    section_type: index === 0 ? "executive_summary" : title.toLowerCase().includes("recommend") ? "recommendation" : "chart_analysis",
-    layout: {
-      rows: [
-        { columns: [{ ...makeSlot("ai_narrative"), prompt: `Write the main narrative for ${title}.` }] },
-        ...(settings.includeTables ? [{ columns: [{ ...makeSlot("table"), prompt: `Add the supporting data table for ${title}.` }] }] : []),
-        ...(settings.includeInfographics ? [{ columns: [{ ...makeSlot("chart"), prompt: `Add the most relevant chart or infographic for ${title}.` }] }] : []),
-      ],
-    },
-  }));
-}
-
 export function ReportTemplateEditor({ open, onOpenChange, template, onSaved }: TemplateEditorProps) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -154,10 +135,13 @@ export function ReportTemplateEditor({ open, onOpenChange, template, onSaved }: 
   const [referencePrompt, setReferencePrompt] = useState("");
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [wizardStep, setWizardStep] = useState<"choose" | "editor">("choose");
 
   useEffect(() => {
     if (!open) return;
     if (template) {
+      setWizardStep("editor");
       setName(template.name);
       setDescription(template.description ?? "");
       setSections(template.layoutJson?.sections?.length ? template.layoutJson.sections : [emptySection()]);
@@ -166,6 +150,7 @@ export function ReportTemplateEditor({ open, onOpenChange, template, onSaved }: 
       setPendingDocs([]);
       loadDocuments(template.id);
     } else {
+      setWizardStep("choose");
       setName("");
       setDescription("");
       setSections([emptySection()]);
@@ -270,15 +255,49 @@ export function ReportTemplateEditor({ open, onOpenChange, template, onSaved }: 
     addRow(sections.length - 1, slotType);
   }
 
-  function generateLayoutFromReference() {
-    const referenceText = [
-      referencePrompt,
-      ...pendingDocs.map((doc) => doc.extractedText ?? doc.filename),
-      ...docs.map((doc) => doc.extractedText ?? doc.filename),
-    ].join("\n\n");
-    const nextSections = templateFromReference(referenceText, settings);
-    setSections(nextSections);
-    toast.success("Template layout generated from reference");
+  function startFromScratch() {
+    setWizardStep("editor");
+  }
+
+  async function generateLayoutFromReference() {
+    const allTexts: string[] = [];
+    for (const doc of pendingDocs) {
+      if (doc.extractedText) allTexts.push(doc.extractedText);
+    }
+    for (const doc of docs) {
+      if (doc.extractedText) allTexts.push(doc.extractedText);
+    }
+    if (!referencePrompt.trim() && allTexts.length === 0) {
+      toast.error("Add a reference prompt or upload reference documents first");
+      return;
+    }
+
+    setGenerating(true);
+    try {
+      const res = await fetch("/api/reports/templates/generate-from-reference", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          referencePrompt: referencePrompt.trim() || undefined,
+          referenceTexts: allTexts,
+          settings,
+        }),
+      });
+
+      const data = await readJson<{ sections: TemplateLayoutSection[]; generatedByAi: boolean; model: string }>(res);
+
+      if (data.sections && data.sections.length > 0) {
+        setSections(data.sections);
+        setWizardStep("editor");
+        toast.success(`AI generated ${data.sections.length} sections from reference`);
+      } else {
+        toast.error("AI returned no sections. Try adding more reference context.");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "AI generation failed");
+    } finally {
+      setGenerating(false);
+    }
   }
 
   async function handleSave() {
@@ -313,7 +332,7 @@ export function ReportTemplateEditor({ open, onOpenChange, template, onSaved }: 
       const savedTemplate = await readJson<ReportTemplate>(res);
 
       if (pendingDocs.length > 0) {
-        await Promise.all(pendingDocs.map(async (doc) =>
+        const results = await Promise.allSettled(pendingDocs.map(async (doc) =>
           readJson<ReferenceDocument>(await fetch(`/api/reports/templates/${savedTemplate.id}/documents`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -327,6 +346,17 @@ export function ReportTemplateEditor({ open, onOpenChange, template, onSaved }: 
             }),
           }))
         ));
+        const linked = results.filter((r) => r.status === "fulfilled").length;
+        if (linked > 0) {
+          toast.success(`Linked ${linked} reference document${linked !== 1 ? "s" : ""}`);
+          // Refresh documents list
+          loadDocuments(savedTemplate.id);
+        }
+        const failed = results.filter((r) => r.status === "rejected").length;
+        if (failed > 0) {
+          toast.error(`${failed} document${failed !== 1 ? "s" : ""} failed to link`);
+        }
+        setPendingDocs([]);
       }
 
       toast.success(template ? "Template updated" : "Template created");
@@ -342,43 +372,60 @@ export function ReportTemplateEditor({ open, onOpenChange, template, onSaved }: 
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    const MAX_SIZE = 25 * 1024 * 1024;
+    if (file.size > MAX_SIZE) {
+      toast.error("File exceeds 25 MB limit");
+      return;
+    }
+
     setUploading(true);
     try {
-      const fileType = file.name.endsWith(".txt") ? "txt" : file.name.endsWith(".md") ? "md" : file.name.endsWith(".docx") ? "docx" : "pdf";
-      const extractedText = fileType === "txt" || fileType === "md" ? await file.text() : undefined;
+      const formData = new FormData();
+      formData.append("file", file);
+      if (template?.id) formData.append("templateId", template.id);
 
-      const body = {
-        templateId: template?.id,
-        filename: file.name,
-        fileUrl: URL.createObjectURL(file),
-        fileType,
-        extractedText,
-        pageCount: 1,
-      };
+      const res = await fetch("/api/reports/templates/upload", {
+        method: "POST",
+        body: formData,
+      });
 
-      if (!template?.id) {
+      const data = await readJson<{
+        fileUrl: string;
+        storagePath: string;
+        fileType: string;
+        filename: string;
+        extractedText: string | null;
+        document: ReferenceDocument | null;
+      }>(res);
+
+      if (data.document) {
+        // Template already exists — document record was created server-side
+        setDocs((prev) => [...prev, data.document!]);
+        toast.success("Reference document uploaded");
+      } else {
+        // No template yet — stage as pending
+        const id = `${Date.now()}-${file.name}`;
+        const fileType = data.fileType as ReferenceDocument["fileType"];
         setPendingDocs((prev) => [...prev, {
-          id: `${Date.now()}-${file.name}`,
-          filename: file.name,
+          id,
+          filename: data.filename,
           fileType,
-          extractedText,
-          fileUrl: body.fileUrl,
+          extractedText: data.extractedText ?? undefined,
+          fileUrl: data.fileUrl,
         }]);
-        toast.success("Reference document staged");
-        return;
+        toast.success("Reference document staged — will be linked when template is saved");
       }
 
-      const doc = await readJson<ReferenceDocument>(
-        await fetch(`/api/reports/templates/${template.id}/documents`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        })
-      );
-      setDocs((prev) => [...prev, doc]);
-      toast.success("Document added");
+      // Reset file input
+      e.target.value = "";
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not upload document");
+      const message = err instanceof Error ? err.message : "Could not upload document";
+      if (message.includes("bucket") || message.includes("Storage bucket")) {
+        toast.error("Storage bucket not configured. Create 'report-reference-docs' bucket in Supabase Dashboard → Storage.");
+      } else {
+        toast.error(message);
+      }
     } finally {
       setUploading(false);
     }
@@ -396,10 +443,158 @@ export function ReportTemplateEditor({ open, onOpenChange, template, onSaved }: 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-[1180px]">
+      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-[90vw] xl:max-w-[1400px]">
         <DialogHeader>
-          <DialogTitle>{template ? "Edit template" : "New template"}</DialogTitle>
+          <DialogTitle>{template ? "Edit template" : wizardStep === "choose" ? "New template" : "New template"}</DialogTitle>
         </DialogHeader>
+
+        {wizardStep === "choose" && !template ? (
+          /* ── AI Prompt Screen ──────────────────────────────────────────── */
+          <div className="mx-auto max-w-2xl space-y-6 py-2">
+            {/* Header */}
+            <div className="text-center">
+              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-brand/10">
+                <Wand2 className="h-6 w-6 text-brand" />
+              </div>
+              <h2 className="text-lg font-bold">Create Report Template</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Describe your report and let AI build the template, or skip to start from scratch.
+              </p>
+            </div>
+
+            {/* Name (compact) */}
+            <div className="space-y-1.5">
+              <Label htmlFor="tpl-name">Template Name</Label>
+              <Input id="tpl-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="My Report Template" />
+            </div>
+
+            {/* Prompt — the main focus */}
+            <div className="space-y-1.5">
+              <Label>What kind of report do you need?</Label>
+              <Textarea
+                value={referencePrompt}
+                onChange={(e) => setReferencePrompt(e.target.value)}
+                placeholder={`Describe the report structure, sections, and focus areas you want the AI to generate. Be as specific as you like.
+
+Example:
+"A quarterly financial performance report covering:
+- Executive summary with key highlights
+- Revenue breakdown by business unit with bar charts
+- Expense analysis comparing budget vs actual with tables
+- Regional performance comparison with map charts
+- Risk assessment section
+- Strategic recommendations for cost optimization
+
+Tone should be professional and data-driven. Include KPI cards for top-level metrics."`}
+                rows={8}
+                className="text-sm leading-relaxed"
+              />
+            </div>
+
+            {/* Reference Documents */}
+            <div className="space-y-1.5">
+              <Label>Reference Documents (optional)</Label>
+              <label className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-muted-foreground/25 p-5 text-center transition-colors hover:border-brand/50 hover:bg-brand/5">
+                {uploading ? (
+                  <>
+                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground">Uploading...</span>
+                  </>
+                ) : (
+                  <>
+                    <FileUp className="h-5 w-5 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground">
+                      Upload PDF, DOCX, TXT, or MD files for AI context
+                    </span>
+                    <span className="text-[10px] text-muted-foreground/60">max 25 MB per file</span>
+                  </>
+                )}
+                <input
+                  type="file"
+                  accept=".pdf,.docx,.txt,.md"
+                  className="hidden"
+                  onChange={handleFileUpload}
+                  disabled={uploading}
+                />
+              </label>
+              {pendingDocs.length > 0 && (
+                <div className="mt-2 space-y-1">
+                  {pendingDocs.map((doc) => (
+                    <div key={doc.id} className="flex items-center justify-between rounded-md border bg-amber-50 px-3 py-1.5">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <FileText className="h-3 w-3 text-muted-foreground shrink-0" />
+                        <span className="text-[11px] truncate">{doc.filename}</span>
+                        {doc.extractedText && <Badge variant="secondary" className="text-[9px]">text extracted</Badge>}
+                      </div>
+                      <Button size="icon-sm" variant="ghost" className="h-5 w-5" onClick={() => setPendingDocs((prev) => prev.filter((item) => item.id !== doc.id))}>
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Quick Settings */}
+            <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-muted/40 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <Label className="text-xs whitespace-nowrap">Density:</Label>
+                <Select value={settings.contentDensity} onValueChange={(v) => setSettings((prev) => ({ ...prev, contentDensity: v as typeof settings.contentDensity }))}>
+                  <SelectTrigger className="h-7 w-[110px] text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="concise">Concise</SelectItem>
+                    <SelectItem value="standard">Standard</SelectItem>
+                    <SelectItem value="detailed">Detailed</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center gap-2">
+                <Label className="text-xs whitespace-nowrap">Focus:</Label>
+                <Input value={settings.analysisFocus} onChange={(e) => setSettings((prev) => ({ ...prev, analysisFocus: e.target.value }))} placeholder="Financial" className="h-7 w-[130px] text-xs" />
+              </div>
+              <Separator orientation="vertical" className="h-5" />
+              <label className="flex items-center gap-1.5 text-xs">
+                <input type="checkbox" checked={settings.includeTables} onChange={(e) => setSettings((prev) => ({ ...prev, includeTables: e.target.checked }))} className="h-3 w-3" />
+                Tables
+              </label>
+              <label className="flex items-center gap-1.5 text-xs">
+                <input type="checkbox" checked={settings.includeInfographics} onChange={(e) => setSettings((prev) => ({ ...prev, includeInfographics: e.target.checked }))} className="h-3 w-3" />
+                Charts
+              </label>
+            </div>
+
+            {/* Generate Button */}
+            <Button
+              onClick={generateLayoutFromReference}
+              disabled={generating}
+              size="lg"
+              className="w-full gap-2 bg-brand text-white hover:bg-brand/90 h-12 text-base"
+            >
+              {generating ? (
+                <><Loader2 className="h-5 w-5 animate-spin" /> Generating template...</>
+              ) : (
+                <><Sparkles className="h-5 w-5" /> Generate Template with AI</>
+              )}
+            </Button>
+
+            {/* Skip option */}
+            <div className="text-center">
+              <button
+                type="button"
+                onClick={startFromScratch}
+                className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline transition-colors"
+              >
+                Skip, I&apos;ll build from scratch
+              </button>
+            </div>
+
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+            </DialogFooter>
+          </div>
+        ) : (
+          /* ── Editor (existing or after wizard) ──────────────────────── */
+          <>
         <div className="space-y-5">
           {/* Name & Description */}
           <div className="grid gap-3 sm:grid-cols-2">
@@ -437,10 +632,11 @@ export function ReportTemplateEditor({ open, onOpenChange, template, onSaved }: 
                 size="sm"
                 variant="outline"
                 onClick={generateLayoutFromReference}
+                disabled={generating}
                 className="w-full gap-2"
               >
-                <Sparkles className="h-4 w-4" />
-                Generate
+                {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Brain className="h-4 w-4" />}
+                {generating ? "Generating..." : "AI Generate"}
               </Button>
             </aside>
 
@@ -701,6 +897,8 @@ export function ReportTemplateEditor({ open, onOpenChange, template, onSaved }: 
             {template ? "Save" : "Create"}
           </Button>
         </DialogFooter>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );

@@ -6,30 +6,30 @@ const project = {
   id: "project-1",
   name: "Quarterly Sales Report",
   description: "A leadership-ready sales report.",
-  source_type: "dashboard",
+  source_type: "dashboard" as const,
   source_dashboard_id: "dashboard-1",
   source_canvas_id: null,
   report_type: "management_report",
   status: "generated",
   created_by: "user-1",
-  created_at: "2026-05-01T08:00:00.000Z",
-  updated_at: "2026-05-01T08:00:00.000Z",
+  created_at: "2026-05-01T09:00:00.000Z",
+  updated_at: "2026-05-01T09:00:00.000Z",
 };
 
 const blueprint = {
   id: "blueprint-1",
   report_project_id: "project-1",
-  version: 2,
+  version: 1,
   status: "approved",
   title: "Quarterly Sales Performance Report",
-  objective: "Explain sales performance by region.",
-  audience: "Executive team",
+  objective: "Summarize quarterly sales performance and highlight key trends.",
+  audience: "VP of Sales and regional managers",
   blueprint_json: {},
   generated_by_ai: true,
-  approved_by: "user-1",
-  approved_at: "2026-05-01T09:00:00.000Z",
-  created_at: "2026-05-01T08:30:00.000Z",
-  updated_at: "2026-05-01T09:00:00.000Z",
+  approved_by: null,
+  approved_at: null,
+  created_at: "2026-05-01T09:05:00.000Z",
+  updated_at: "2026-05-01T09:05:00.000Z",
 };
 
 const sections = [
@@ -87,7 +87,7 @@ const sections = [
 const snapshot = {
   id: "snapshot-1",
   report_project_id: "project-1",
-  source_type: "dashboard",
+  source_type: "dashboard" as const,
   source_id: "dashboard-1",
   active_filters_snapshot: { filters: { region: ["North"] }, smart_filters: ["top-performers"] },
   widgets_snapshot: [

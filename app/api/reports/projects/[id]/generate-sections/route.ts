@@ -26,7 +26,7 @@ export async function POST(
     const output = await generateAllReportSections(supabase, id, {
       instructions: body.instructions,
       allowPreview: Boolean(body.allow_preview ?? body.allowPreview),
-    });
+    }, user.id);
 
     for (const generated of output.generated) {
       await logReportAction(supabase, user.id, "generate_section", {

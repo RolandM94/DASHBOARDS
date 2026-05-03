@@ -12,7 +12,7 @@ export async function DELETE(
   if (!user) return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
 
   try {
-    await deleteReferenceDocument(supabase, docId);
+    await deleteReferenceDocument(supabase, docId, user.id);
     return NextResponse.json({ status: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not delete document";

@@ -507,16 +507,20 @@ async function nextBlueprintVersion(
 export async function generateReportBlueprint(
   supabase: SupabaseRouteClient,
   reportProjectId: string,
-  input: GenerateReportBlueprintInput = {}
+  input: GenerateReportBlueprintInput = {},
+  userId?: string
 ): Promise<GenerateReportBlueprintResult> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not configured on the server.");
 
-  const { data: project, error: projectError } = await supabase
+  let projectQuery = supabase
     .from("report_projects")
     .select("id, name, description, template_id, report_type, status")
-    .eq("id", reportProjectId)
-    .single();
+    .eq("id", reportProjectId);
+
+  if (userId) projectQuery = projectQuery.eq("created_by", userId);
+
+  const { data: project, error: projectError } = await projectQuery.single();
 
   if (projectError || !project) throw new Error("Report project not found");
 
@@ -537,7 +541,7 @@ export async function generateReportBlueprint(
   const templateContext = await getTemplateContext(supabase, projectRow.template_id);
   const client = new Anthropic({ apiKey });
   const message = await client.messages.create({
-    model: "claude-haiku-4-5-20251001",
+    model: process.env.ANTHROPIC_REPORT_MODEL || "claude-haiku-4-5-20251001",
     max_tokens: 2600,
     system: buildBlueprintSystemPrompt(),
     messages: [

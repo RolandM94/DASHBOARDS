@@ -20,7 +20,7 @@ import {
 } from "@/lib/reports/sectionGeneratorCore";
 import type { ReportSection } from "@/types";
 
-const SECTION_GENERATOR_MODEL = "claude-haiku-4-5-20251001";
+const SECTION_GENERATOR_MODEL = process.env.ANTHROPIC_REPORT_MODEL || "claude-haiku-4-5-20251001";
 
 export type { GeneratedSectionPayload, GenerateReportSectionOptions };
 
@@ -192,8 +192,21 @@ export async function generateReportSection(
 export async function generateAllReportSections(
   supabase: SupabaseRouteClient,
   reportProjectId: string,
-  options: GenerateReportSectionOptions = {}
+  options: GenerateReportSectionOptions = {},
+  userId?: string
 ): Promise<GenerateAllSectionsResult> {
+  // Verify ownership before proceeding
+  if (userId) {
+    const { data: project, error: projectError } = await supabase
+      .from("report_projects")
+      .select("id")
+      .eq("id", reportProjectId)
+      .eq("created_by", userId)
+      .single();
+
+    if (projectError || !project) throw new Error("Report project not found or access denied");
+  }
+
   const { data: sections, error } = await supabase
     .from("report_sections")
     .select(REPORT_SECTION_COLUMNS)

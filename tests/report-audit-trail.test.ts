@@ -8,7 +8,7 @@ import {
 const project = {
   id: "project-1",
   name: "Quarterly Sales Report",
-  source_type: "dashboard",
+  source_type: "dashboard" as const,
   source_dashboard_id: "dashboard-1",
   source_canvas_id: null,
   report_type: "management_report",
@@ -22,7 +22,7 @@ const snapshots = [
   {
     id: "snapshot-2",
     report_project_id: "project-1",
-    source_type: "dashboard",
+    source_type: "dashboard" as const,
     source_id: "dashboard-1",
     active_filters_snapshot: { filters: { region: ["North"] } },
     widgets_snapshot: [{ id: "widget-1", title: "Sales by Region" }],
@@ -216,7 +216,7 @@ test("buildReportAuditTrail returns complete traceability", () => {
   assert.deepEqual(audit.traceability.ai_models_used, ["claude-test"]);
   assert.equal(audit.traceability.failed_action_count, 1);
   assert.equal(audit.exports[0].source_snapshot_id, "snapshot-2");
-  assert.equal(audit.compilations[0].audit_note.note_text, "Generated from Sales Dashboard.");
+  assert.equal((audit.compilations[0].audit_note as Record<string, unknown>).note_text, "Generated from Sales Dashboard.");
   assert.ok(audit.warnings.includes("Widget 2 could not be captured."));
   assert.ok(audit.warnings.includes("Section generation failed."));
 });
@@ -231,8 +231,8 @@ test("compareReportVersionsFromRows reports section and title differences", () =
     compilations,
   });
 
-  assert.equal(comparison.blueprint_a.title, "Sales Report v1");
-  assert.equal(comparison.blueprint_b.title, "Sales Report v2");
+  assert.equal(comparison.blueprint_a!.title, "Sales Report v1");
+  assert.equal(comparison.blueprint_b!.title, "Sales Report v2");
   assert.equal(comparison.differences.title_changed, true);
   assert.equal(comparison.differences.section_count_delta, 1);
   assert.deepEqual(comparison.differences.added_section_keys, ["appendix"]);

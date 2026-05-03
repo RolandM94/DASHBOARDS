@@ -44,12 +44,15 @@ export async function getTemplates(supabase: SupabaseRouteClient, userId: string
   return (data ?? []).map((row) => dbToTemplate(row));
 }
 
-export async function getTemplate(supabase: SupabaseRouteClient, templateId: string): Promise<ReportTemplate | null> {
-  const { data, error } = await supabase
+export async function getTemplate(supabase: SupabaseRouteClient, templateId: string, userId?: string): Promise<ReportTemplate | null> {
+  let query = supabase
     .from("report_templates")
     .select(TEMPLATE_COLUMNS)
-    .eq("id", templateId)
-    .single();
+    .eq("id", templateId);
+
+  if (userId) query = query.eq("created_by", userId);
+
+  const { data, error } = await query.single();
 
   if (error || !data) return null;
   return dbToTemplate(data);
@@ -58,15 +61,20 @@ export async function getTemplate(supabase: SupabaseRouteClient, templateId: str
 export async function updateTemplate(
   supabase: SupabaseRouteClient,
   templateId: string,
-  body: JsonObject
+  body: JsonObject,
+  userId?: string
 ): Promise<ReportTemplate> {
   const built = buildTemplatePatch(body);
   if (built.error) throw new Error(built.error);
 
-  const { data, error } = await supabase
+  let query = supabase
     .from("report_templates")
     .update(built.data!)
-    .eq("id", templateId)
+    .eq("id", templateId);
+
+  if (userId) query = query.eq("created_by", userId);
+
+  const { data, error } = await query
     .select(TEMPLATE_COLUMNS)
     .single();
 
@@ -74,11 +82,15 @@ export async function updateTemplate(
   return dbToTemplate(data);
 }
 
-export async function deleteTemplate(supabase: SupabaseRouteClient, templateId: string): Promise<void> {
-  const { error } = await supabase
+export async function deleteTemplate(supabase: SupabaseRouteClient, templateId: string, userId?: string): Promise<void> {
+  let query = supabase
     .from("report_templates")
     .delete()
     .eq("id", templateId);
+
+  if (userId) query = query.eq("created_by", userId);
+
+  const { error } = await query;
 
   if (error) throw new Error(error.message);
 }
@@ -103,22 +115,30 @@ export async function addReferenceDocument(
   return dbToReferenceDocument(data);
 }
 
-export async function getTemplateDocuments(supabase: SupabaseRouteClient, templateId: string): Promise<ReferenceDocument[]> {
-  const { data, error } = await supabase
+export async function getTemplateDocuments(supabase: SupabaseRouteClient, templateId: string, userId?: string): Promise<ReferenceDocument[]> {
+  let query = supabase
     .from("template_reference_documents")
     .select(REF_DOC_COLUMNS)
-    .eq("template_id", templateId)
+    .eq("template_id", templateId);
+
+  if (userId) query = query.eq("created_by", userId);
+
+  const { data, error } = await query
     .order("created_at", { ascending: false });
 
   if (error) throw new Error(error.message);
   return (data ?? []).map((row) => dbToReferenceDocument(row));
 }
 
-export async function deleteReferenceDocument(supabase: SupabaseRouteClient, docId: string): Promise<void> {
-  const { error } = await supabase
+export async function deleteReferenceDocument(supabase: SupabaseRouteClient, docId: string, userId?: string): Promise<void> {
+  let query = supabase
     .from("template_reference_documents")
     .delete()
     .eq("id", docId);
+
+  if (userId) query = query.eq("created_by", userId);
+
+  const { error } = await query;
 
   if (error) throw new Error(error.message);
 }
@@ -127,12 +147,17 @@ export async function updateReferenceDocumentText(
   supabase: SupabaseRouteClient,
   docId: string,
   extractedText: string,
-  pageCount: number
+  pageCount: number,
+  userId?: string
 ): Promise<void> {
-  const { error } = await supabase
+  let query = supabase
     .from("template_reference_documents")
     .update({ extracted_text: extractedText, page_count: pageCount })
     .eq("id", docId);
+
+  if (userId) query = query.eq("created_by", userId);
+
+  const { error } = await query;
 
   if (error) throw new Error(error.message);
 }

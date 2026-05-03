@@ -22,6 +22,7 @@ export interface CompileReportServiceOptions extends CompileReportOptions {
   blueprintId?: string;
   compiledBy?: string;
   allowPreview?: boolean;
+  userId?: string;
 }
 
 export interface CompileReportResult {
@@ -31,13 +32,17 @@ export interface CompileReportResult {
 
 async function getProject(
   supabase: SupabaseRouteClient,
-  reportProjectId: string
+  reportProjectId: string,
+  userId?: string
 ): Promise<ReportCompilerProjectRow> {
-  const { data, error } = await supabase
+  let query = supabase
     .from("report_projects")
     .select(REPORT_PROJECT_COLUMNS)
-    .eq("id", reportProjectId)
-    .single();
+    .eq("id", reportProjectId);
+
+  if (userId) query = query.eq("created_by", userId);
+
+  const { data, error } = await query.single();
 
   if (error || !data) throw new Error("Report project not found");
   return data as ReportCompilerProjectRow;
@@ -110,7 +115,7 @@ export async function compileReport(
   reportProjectId: string,
   options: CompileReportServiceOptions = {}
 ): Promise<CompileReportResult> {
-  const project = await getProject(supabase, reportProjectId);
+  const project = await getProject(supabase, reportProjectId, options.userId);
   const blueprint = await getBlueprint(supabase, reportProjectId, options.blueprintId, options.allowPreview);
   const [snapshot, sections] = await Promise.all([
     getLatestSnapshot(supabase, reportProjectId),

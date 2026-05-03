@@ -31,6 +31,7 @@ export async function POST(
       includeAppendices: body.include_appendices ?? body.includeAppendices,
       allowPreview: Boolean(body.allow_preview ?? body.allowPreview),
       compiledBy: user.id,
+      userId: user.id,
     });
 
     await logReportAction(supabase, user.id, "compile_report", {
