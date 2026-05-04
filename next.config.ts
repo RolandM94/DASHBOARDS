@@ -9,7 +9,11 @@ const extraOrigins = process.env.ALLOWED_DEV_ORIGINS
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: extraOrigins,
-  serverExternalPackages: ["playwright", "playwright-core"],
+  serverExternalPackages: ["playwright", "playwright-core", "@sparticuz/chromium"],
+  outputFileTracingIncludes: {
+    "/api/reports/**/*": ["./node_modules/@sparticuz/chromium/bin/**/*"],
+    "/api/reports/*": ["./node_modules/@sparticuz/chromium/bin/**/*"],
+  },
 };
 
 export default nextConfig;
