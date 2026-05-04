@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev -H 0.0.0.0",
-    "install:browsers": "npx playwright install chromium",
+    "install:browsers": "[ -n \"$VERCEL\" ] && echo 'Skipping Playwright browser install on Vercel (using @sparticuz/chromium)' || npx playwright install chromium",
     "build": "npm run install:browsers && next build",
     "test": "npx tsx --test tests/*.test.ts tests/*.test.mjs",
     "start": "next start",
@@ -19,6 +19,7 @@
     "@dnd-kit/modifiers": "^9.0.0",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
+    "@sparticuz/chromium": "^148.0.0",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.103.0",
     "@types/react-simple-maps": "^3.0.6",
