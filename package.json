@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev -H 0.0.0.0",
-    "install:browsers": "PLAYWRIGHT_BROWSERS_PATH=0 playwright install chromium",
+    "install:browsers": "npx playwright install chromium",
     "build": "npm run install:browsers && next build",
     "test": "npx tsx --test tests/*.test.ts tests/*.test.mjs",
     "start": "next start",

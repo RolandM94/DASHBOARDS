@@ -9,6 +9,7 @@ const extraOrigins = process.env.ALLOWED_DEV_ORIGINS
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: extraOrigins,
+  serverExternalPackages: ["playwright", "playwright-core"],
 };
 
 export default nextConfig;
