@@ -514,6 +514,7 @@ export interface ReportJob {
   totalSteps: number;
   completedSteps: number;
   errorMessage?: string;
+  jobPayload: Record<string, unknown>;
   startedAt?: string;
   finishedAt?: string;
   createdAt: string;

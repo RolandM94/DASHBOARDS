@@ -43,12 +43,14 @@ export async function createJob(
   supabase: SupabaseRouteClient,
   reportProjectId: string,
   jobType: ReportJobType,
-  totalSteps = 1
+  totalSteps = 1,
+  jobPayload: Record<string, unknown> = {}
 ): Promise<ReportJob> {
   const built = buildReportJobInsert({
     reportProjectId,
     jobType,
     totalSteps,
+    jobPayload,
   });
   if (built.error) throw new Error(built.error);
 
@@ -212,6 +214,32 @@ export async function getLatestJobPerType(
     }
   }
   return latest;
+}
+
+export async function claimNextQueuedJobs(
+  supabase: SupabaseRouteClient,
+  limit = 10
+): Promise<ReportJob[]> {
+  const { data, error } = await supabase
+    .from("report_jobs")
+    .select(REPORT_JOB_COLUMNS)
+    .eq("status", "queued")
+    .order("created_at", { ascending: true })
+    .limit(limit);
+
+  if (error || !data || data.length === 0) return [];
+
+  const jobs = data.map((row) => dbToReportJob(row));
+
+  // Mark all as running in one query
+  const now = new Date().toISOString();
+  const ids = jobs.map((j) => j.id);
+  await supabase
+    .from("report_jobs")
+    .update({ status: "running", started_at: now })
+    .in("id", ids);
+
+  return jobs;
 }
 
 // ── Route wrapper ────────────────────────────────────────────────────────────

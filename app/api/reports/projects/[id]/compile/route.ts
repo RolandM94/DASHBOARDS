@@ -1,7 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { logReportAction } from "@/lib/reports/api";
-import { compileReport } from "@/lib/reports/reportCompiler";
-import { runWithJob } from "@/lib/reports/jobTracker";
+import { createJob } from "@/lib/reports/jobTracker";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
@@ -23,41 +21,15 @@ export async function POST(
     allowPreview?: boolean;
   };
 
-  const { job, result } = await runWithJob(supabase, id, "compile_report", 1, async (updateProgress) => {
-    await updateProgress("Compiling report", 0, 1);
-
-    const output = await compileReport(supabase, id, {
-      blueprintId: body.blueprint_id ?? body.blueprintId,
-      includeAppendices: body.include_appendices ?? body.includeAppendices,
-      allowPreview: Boolean(body.allow_preview ?? body.allowPreview),
-      compiledBy: user.id,
-      userId: user.id,
-    });
-
-    await logReportAction(supabase, user.id, "compile_report", {
-      reportProjectId: id,
-      inputPayload: body as Record<string, unknown>,
-      outputSummary: {
-        report_compilation_id: output.compilation.id,
-        report_blueprint_id: output.compilation.reportBlueprintId,
-        section_count: output.payload.sections.length,
-        appendix_count: output.payload.appendices.length,
-        warning_count: output.payload.warnings.length,
-      },
-    });
-
-    await updateProgress("Report compiled", 1, 1);
-    return output;
+  const job = await createJob(supabase, id, "compile_report", 1, {
+    blueprintId: body.blueprint_id ?? body.blueprintId,
+    includeAppendices: body.include_appendices ?? body.includeAppendices,
+    allowPreview: Boolean(body.allow_preview ?? body.allowPreview),
   });
-
-  if (job.status === "failed") {
-    return NextResponse.json({ error: job.errorMessage ?? "Report compilation failed", job_id: job.id }, { status: 400 });
-  }
 
   return NextResponse.json({
     status: true,
     job_id: job.id,
-    compilation: result.compilation,
-    payload: result.payload,
-  });
+    message: "Report compilation queued",
+  }, { status: 202 });
 }
