@@ -1,4 +1,5 @@
 import { createServiceClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
@@ -28,6 +29,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const supabase = await createServiceClient();
+
     const { data, error } = await supabase.auth.admin.createUser({
       email,
       password,
@@ -55,8 +57,31 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
+    const userId = data.user.id;
+
+    // Ensure email is confirmed at the database level
+    // (belt-and-suspenders: admin.createUser with email_confirm:true SHOULD do this,
+    //  but Supabase project-level "Enable email confirmations" can interfere)
+    await supabase.auth.admin.updateUserById(userId, {
+      email_confirm: true,
+    });
+
+    // Sign the user in server-side so they get a session cookie immediately
+    const normalClient = await createClient();
+    const { error: signInError } = await normalClient.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (signInError) {
+      console.warn("[signup] server-side sign-in failed, user will need to log in manually", {
+        userId,
+        error: signInError.message,
+      });
+    }
+
     return NextResponse.json({
-      id: data.user.id,
+      id: userId,
       email: data.user.email,
     });
   } catch (err) {
