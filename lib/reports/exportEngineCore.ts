@@ -1,9 +1,13 @@
 import {
+  AlignmentType,
+  BorderStyle,
   Document,
   HeadingLevel,
+  ImageRun,
   Packer,
   PageBreak,
   Paragraph,
+  ShadingType,
   Table,
   TableCell,
   TableOfContents,
@@ -109,16 +113,7 @@ export interface FigureData {
 // looksLikeHtml, sanitizeRichHtml, inlineMd, mdToHtml, richTextToHtml,
 // plainTextFromMarkdown, plainTextFromRichText, shortLabel
 
-function renderFigureDocxImage(figure: FigureData): string {
-  const { rows, yKeys } = parseChart(figure.query_output);
-  const value = rows.length > 0 && yKeys.length > 0 ? rows[0].values[0] : 0;
-  const label = yKeys[0] ?? "Value";
 
-  return `<w:p>
-    <w:pPr><w:pStyle w:val="Caption"/></w:pPr>
-    <w:r><w:t xml:space="preserve">Figure ${figure.figure_number}: ${xmlEscape(figure.title)} \u2014 ${value.toLocaleString()} ${xmlEscape(label)}</w:t></w:r>
-  </w:p>`;
-}
 
 export function renderInlineSvgForFigure(figure: FigureData): string {
   return figureHtml(figure as unknown as Record<string, unknown>);
@@ -172,7 +167,6 @@ export function renderReportHtml(payload: JsonObject, options: ReportExportOptio
   const title = titleFromPayload(payload);
   const sections = asRecordArray(payload.sections);
   const includeCharts = shouldIncludeCharts(options);
-  const allFigures = includeCharts ? collectFigures(sections) : [];
 
   const sectionHtml = sections.map((section) => {
     const content = String(section.content_markdown ?? "");
@@ -397,44 +391,85 @@ function docxTextParagraph(text: string, heading?: (typeof HeadingLevel)[keyof t
   });
 }
 
+// ── Figure → DOCX Image ──────────────────────────────────────────────────────
+
+function figureToSvg(figure: Record<string, unknown>): string {
+  const html = figureHtml(figure as Record<string, unknown>);
+  const svgMatch = html.match(/<svg[\s\S]*?<\/svg>/);
+  return svgMatch ? svgMatch[0] : "";
+}
+
+const FIGURE_DIMS: Record<string, { w: number; h: number }> = {
+  pie: { w: 540, h: 320 },
+  kpi: { w: 540, h: 120 },
+  default: { w: 560, h: 340 },
+};
+
+function figureDimensions(figure: Record<string, unknown>): { w: number; h: number } {
+  const ct = String((figure.visual_config as Record<string, unknown>)?.chartType ?? figure.widget_type ?? "");
+  if (ct.includes("pie")) return FIGURE_DIMS.pie;
+  if (ct === "kpi") return FIGURE_DIMS.kpi;
+  return FIGURE_DIMS.default;
+}
+
+async function renderSvgToPng(_svg: string): Promise<Buffer | null> {
+  try {
+    // Dynamic import — sharp is available via Next.js but may not have librsvg on all platforms
+    const sharp = (await import("sharp")).default;
+    const png = await sharp(Buffer.from(_svg)).resize(1120, 680, { fit: "inside" }).png().toBuffer();
+    return png;
+  } catch {
+    return null;
+  }
+}
+
+async function figureToDocxImage(figure: Record<string, unknown>): Promise<Paragraph> {
+  const svg = figureToSvg(figure);
+  const figNum = figure.figure_number;
+  const title = String(figure.title ?? "Figure");
+  const dims = figureDimensions(figure);
+  const png = await renderSvgToPng(svg);
+
+  if (!svg) {
+    return new Paragraph({
+      spacing: { before: 240, after: 80 },
+      alignment: AlignmentType.CENTER,
+      children: [new TextRun({ text: `[Figure ${figNum}: ${title} — chart unavailable]`, italics: true, font: "Times New Roman", size: 20 })],
+    });
+  }
+
+  const fallbackPng = png ?? Buffer.from(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#f1f5f9"/><text x="50" y="55" text-anchor="middle" font-size="11" fill="#94a3b8">Chart unavailable</text></svg>'
+  );
+
+  return new Paragraph({
+    spacing: { before: 240, after: 80 },
+    alignment: AlignmentType.CENTER,
+    children: [
+      new ImageRun({
+        type: "svg",
+        data: Buffer.from(svg),
+        fallback: { type: "png", data: fallbackPng },
+        transformation: { width: dims.w, height: dims.h },
+      }),
+    ],
+  });
+}
+
+function figureCaptionParagraph(figure: Record<string, unknown>): Paragraph {
+  const figNum = figure.figure_number;
+  const title = String(figure.title ?? "Figure");
+  return new Paragraph({
+    spacing: { after: 240 },
+    alignment: AlignmentType.CENTER,
+    children: [new TextRun({ text: `Figure ${figNum}: ${title}`, italics: true, font: "Times New Roman", size: 20, color: "#6b7280" })],
+  });
+}
+
 interface DocxTextSegment {
   text: string;
   bold?: boolean;
   italic?: boolean;
-}
-
-function resolveFigurePlaceholders(markdown: unknown, embeddedFigures: unknown[]): { resolvedText: string; referencedFigureNums: Set<number> } {
-  const content = looksLikeHtml(markdown) ? plainTextFromRichText(markdown) : String(markdown ?? "");
-  const figureMap = new Map<number, string>();
-  for (const fig of embeddedFigures) {
-    const f = fig as Record<string, unknown>;
-    const num = Number(f.figure_number);
-    if (!Number.isNaN(num)) {
-      figureMap.set(num, `[Figure ${num}: ${String(f.title ?? "Figure")}]`);
-    }
-  }
-  const referencedNums = new Set<number>();
-  const resolved = content.replace(/\{\{FIGURE:(\d+)\}\}/g, (_match, numStr) => {
-    const num = Number(numStr);
-    const replacement = figureMap.get(num) ?? `[Figure ${numStr} — unavailable]`;
-    referencedNums.add(num);
-    return replacement;
-  });
-  return { resolvedText: resolved, referencedFigureNums: referencedNums };
-}
-
-function docxBoldItalicParagraph(segments: DocxTextSegment[], heading?: (typeof HeadingLevel)[keyof typeof HeadingLevel]): Paragraph {
-  const runs = segments
-    .filter((seg) => seg.text.length > 0)
-    .map((seg) => new TextRun({ text: seg.text, bold: seg.bold ?? false, italics: seg.italic ?? false, font: "Times New Roman", size: heading ? 28 : 22 }));
-  if (runs.length === 0) {
-    runs.push(new TextRun({ text: "", font: "Times New Roman", size: heading ? 28 : 22 }));
-  }
-  return new Paragraph({
-    heading,
-    spacing: { after: heading ? 180 : 120 },
-    children: runs,
-  });
 }
 
 function parseMarkdownBoldItalic(text: string): DocxTextSegment[] {
@@ -453,29 +488,39 @@ function parseMarkdownBoldItalic(text: string): DocxTextSegment[] {
   return segments;
 }
 
+function docxBoldItalicParagraph(segments: DocxTextSegment[], heading?: (typeof HeadingLevel)[keyof typeof HeadingLevel]): Paragraph {
+  const runs = segments
+    .filter((seg) => seg.text.length > 0)
+    .map((seg) => new TextRun({ text: seg.text, bold: seg.bold ?? false, italics: seg.italic ?? false, font: "Times New Roman", size: heading ? 28 : 22 }));
+  if (runs.length === 0) {
+    runs.push(new TextRun({ text: "", font: "Times New Roman", size: heading ? 28 : 22 }));
+  }
+  return new Paragraph({
+    heading,
+    spacing: { after: heading ? 180 : 120 },
+    children: runs,
+  });
+}
+
 function docxContentBlocks(markdown: unknown): Paragraph[] {
   const content = looksLikeHtml(markdown) ? plainTextFromRichText(markdown) : String(markdown ?? "");
   const lines = content.split(/\r?\n/);
   const blocks: Paragraph[] = [];
 
-  for (let i = 0; i < lines.length; i++) {
-    const raw = lines[i];
+  for (const raw of lines) {
     const line = raw.trim();
     if (!line) continue;
 
     if (line.startsWith("### ")) {
-      const headingText = line.slice(4).trim();
-      blocks.push(docxTextParagraph(headingText, HeadingLevel.HEADING_3));
+      blocks.push(docxTextParagraph(line.slice(4).trim(), HeadingLevel.HEADING_3));
       continue;
     }
     if (line.startsWith("## ")) {
-      const headingText = line.slice(3).trim();
-      blocks.push(docxTextParagraph(headingText, HeadingLevel.HEADING_2));
+      blocks.push(docxTextParagraph(line.slice(3).trim(), HeadingLevel.HEADING_2));
       continue;
     }
     if (line.startsWith("# ")) {
-      const headingText = line.slice(2).trim();
-      blocks.push(docxTextParagraph(headingText, HeadingLevel.HEADING_1));
+      blocks.push(docxTextParagraph(line.slice(2).trim(), HeadingLevel.HEADING_1));
       continue;
     }
     if (line.startsWith("- ") || line.startsWith("* ")) {
@@ -496,23 +541,47 @@ function docxContentBlocks(markdown: unknown): Paragraph[] {
   return blocks;
 }
 
+function isNumericCell(value: unknown): boolean {
+  return typeof value === "number" || (typeof value === "string" && /^-?[\d,]+\.?\d*$/.test(value.trim()));
+}
+
 function docxTable(title: string, rows: JsonObject[]): (Paragraph | Table)[] {
   if (rows.length === 0) return [docxTextParagraph(title, HeadingLevel.HEADING_3), docxTextParagraph("No tabular data available.")];
 
   const columns = Array.from(new Set(rows.flatMap((row) => Object.keys(row)))).slice(0, 8);
+  const numericCols = new Set(columns.filter((col) => rows.every((row) => isNumericCell(row[col]))));
+
+  const headerBg = "#2563eb";
+  const altRowBg = "#f8fafc";
+  const border = { style: BorderStyle.SINGLE, size: 1, color: "#d1d5db" };
+  const cellBorders = { top: border, bottom: border, left: border, right: border };
+
   return [
     docxTextParagraph(title, HeadingLevel.HEADING_3),
     new Table({
       width: { size: 100, type: WidthType.PERCENTAGE },
       rows: [
         new TableRow({
+          tableHeader: true,
           children: columns.map((column) => new TableCell({
-            children: [new Paragraph({ children: [new TextRun({ text: column, bold: true, font: "Times New Roman", size: 22 })] })],
+            borders: cellBorders,
+            shading: { type: ShadingType.SOLID, color: headerBg, fill: headerBg },
+            children: [new Paragraph({
+              alignment: AlignmentType.CENTER,
+              spacing: { before: 40, after: 40 },
+              children: [new TextRun({ text: column, bold: true, font: "Times New Roman", size: 20, color: "#ffffff" })],
+            })],
           })),
         }),
-        ...rows.slice(0, 50).map((row) => new TableRow({
+        ...rows.slice(0, 50).map((row, rowIndex) => new TableRow({
           children: columns.map((column) => new TableCell({
-            children: [new Paragraph({ children: [new TextRun({ text: String(row[column] ?? ""), font: "Times New Roman", size: 22 })] })],
+            borders: cellBorders,
+            shading: rowIndex % 2 === 1 ? { type: ShadingType.SOLID, color: altRowBg, fill: altRowBg } : undefined,
+            children: [new Paragraph({
+              alignment: numericCols.has(column) ? AlignmentType.RIGHT : AlignmentType.LEFT,
+              spacing: { before: 30, after: 30 },
+              children: [new TextRun({ text: String(row[column] ?? ""), font: "Times New Roman", size: 20 })],
+            })],
           })),
         })),
       ],
@@ -520,12 +589,126 @@ function docxTable(title: string, rows: JsonObject[]): (Paragraph | Table)[] {
   ];
 }
 
+function isChartType(figure: Record<string, unknown>): boolean {
+  const ct = String((figure.visual_config as Record<string, unknown>)?.chartType ?? figure.widget_type ?? "");
+  return ct.includes("bar") || ct.includes("line") || ct.includes("pie") || ct.includes("area");
+}
+
+function isKpiType(figure: Record<string, unknown>): boolean {
+  const ct = String((figure.visual_config as Record<string, unknown>)?.chartType ?? figure.widget_type ?? "");
+  return ct === "kpi";
+}
+
+function kpiDocxBlocks(figure: Record<string, unknown>): Paragraph[] {
+  const { rows, yKeys } = parseChart(figure.query_output as JsonObject);
+  const row = rows[0];
+  const blocks: Paragraph[] = [];
+
+  yKeys.forEach((key, index) => {
+    const value = kpiValue(row?.values[index] ?? 0);
+    blocks.push(new Paragraph({
+      spacing: { before: 80, after: 40 },
+      alignment: AlignmentType.CENTER,
+      children: [
+        new TextRun({ text: key, font: "Times New Roman", size: 18, color: "#6b7280", bold: false }),
+        new TextRun({ break: 1 }),
+        new TextRun({ text: value.display, font: "Times New Roman", size: 36, bold: true, color: "#0f172a" }),
+      ],
+    }));
+  });
+
+  return [
+    new Paragraph({
+      spacing: { before: 200, after: 200 },
+      alignment: AlignmentType.CENTER,
+      border: { top: { style: BorderStyle.SINGLE, size: 6, color: "#2563eb" }, bottom: { style: BorderStyle.SINGLE, size: 1, color: "#e2e8f0" } },
+      children: [],
+    }),
+    ...blocks,
+    new Paragraph({
+      spacing: { before: 80, after: 200 },
+      border: { top: { style: BorderStyle.SINGLE, size: 1, color: "#e2e8f0" } },
+      children: [],
+    }),
+  ];
+}
+
+async function renderFigureDocx(figure: Record<string, unknown>): Promise<(Paragraph | Table)[]> {
+  // Charts (bar, line, pie, area) → SVG image
+  if (isChartType(figure)) {
+    const image = await figureToDocxImage(figure);
+    return [image, figureCaptionParagraph(figure)];
+  }
+
+  // KPIs → styled text blocks
+  if (isKpiType(figure)) {
+    return [figureCaptionParagraph(figure), ...kpiDocxBlocks(figure)];
+  }
+
+  // Tables → professionally styled DOCX table
+  const { rows, columns } = parseTable(figure.query_output as JsonObject);
+  if (rows.length > 0 && columns.length > 0) {
+    return [figureCaptionParagraph(figure), ...docxTable(String(figure.title ?? ""), rows)];
+  }
+
+  return [figureCaptionParagraph(figure), docxTextParagraph("No data available for this figure.")];
+}
+
+async function renderSectionContentDocx(
+  section: Record<string, unknown>,
+  embeddedFigures: Record<string, unknown>[],
+  includeCharts: boolean
+): Promise<(Paragraph | Table)[]> {
+  const content = String(section.content_markdown ?? "");
+  const children: (Paragraph | Table)[] = [];
+  const figureMap = new Map<number, Record<string, unknown>>();
+  const referencedNums = new Set<number>();
+
+  if (includeCharts) {
+    for (const fig of embeddedFigures) {
+      const num = Number(fig.figure_number);
+      if (!Number.isNaN(num)) figureMap.set(num, fig);
+    }
+  }
+
+  // Split content by {{FIGURE:N}} markers and interleave figures
+  const parts = content.split(/(\{\{FIGURE:\d+\}\})/g);
+
+  for (const part of parts) {
+    const figMatch = part.match(/^\{\{FIGURE:(\d+)\}\}$/);
+    if (figMatch) {
+      const num = Number(figMatch[1]);
+      const figure = figureMap.get(num);
+      if (figure) {
+        referencedNums.add(num);
+        children.push(...await renderFigureDocx(figure));
+      } else {
+        children.push(docxTextParagraph(`[Figure ${num} — not found]`));
+      }
+    } else {
+      // Render text content with formatting
+      children.push(...docxContentBlocks(part));
+    }
+  }
+
+  // Append unreferenced figures
+  if (includeCharts) {
+    for (const fig of embeddedFigures) {
+      const num = Number(fig.figure_number);
+      if (!referencedNums.has(num)) {
+        children.push(...await renderFigureDocx(fig));
+      }
+    }
+  }
+
+  return children;
+}
+
 export async function renderReportDocx(payload: JsonObject, options: ReportExportOptions = {}): Promise<Uint8Array> {
   const title = titleFromPayload(payload);
   const sections = asRecordArray(payload.sections);
   const includeCharts = shouldIncludeCharts(options);
-  const allFigures = includeCharts ? collectFigures(sections) : [];
-  const children: Array<Paragraph | Table | TableOfContents> = [
+  const children: (Paragraph | Table | TableOfContents)[] = [
     docxTextParagraph(title, HeadingLevel.TITLE),
     new Paragraph({ children: [new PageBreak()] }),
     docxTextParagraph("Table Of Contents", HeadingLevel.HEADING_1),
@@ -536,32 +719,10 @@ export async function renderReportDocx(payload: JsonObject, options: ReportExpor
     children.push(docxTextParagraph(String(section.title ?? "Untitled section"), HeadingLevel.HEADING_1));
 
     const record = section as Record<string, unknown>;
-    const embeddedFigures = (includeCharts && Array.isArray(record.embedded_figures) ? record.embedded_figures : []) as unknown[];
+    const embeddedFigures = (includeCharts && Array.isArray(record.embedded_figures) ? record.embedded_figures : []) as Record<string, unknown>[];
 
-    // Resolve FIGURE placeholders in content and render the content
-    const { resolvedText, referencedFigureNums } = resolveFigurePlaceholders(section.content_markdown, embeddedFigures);
-    children.push(...docxContentBlocks(resolvedText));
-
-    // Render figures that were referenced inline as data tables + caption
-    // Also render any unreferenced figures at the end of the section
-    for (const fig of embeddedFigures) {
-      const f = fig as unknown as FigureData;
-      const { rows, columns } = parseTable(f.query_output);
-      const headerColumns = columns.slice(0, 8);
-
-      const figureLabel = new Paragraph({
-        spacing: { before: 240 },
-        children: [new TextRun({ text: `Figure ${f.figure_number}: ${f.title}`, italics: true, font: "Times New Roman", size: 22 })],
-      });
-
-      if (rows.length > 0 && headerColumns.length > 0) {
-        children.push(figureLabel);
-        children.push(...docxTable(f.title, rows));
-      } else if (!referencedFigureNums.has(f.figure_number)) {
-        children.push(figureLabel);
-        children.push(docxTextParagraph("No tabular data available."));
-      }
-    }
+    const sectionChildren = await renderSectionContentDocx(record, embeddedFigures, includeCharts);
+    children.push(...sectionChildren);
   }
 
   const document = new Document({
