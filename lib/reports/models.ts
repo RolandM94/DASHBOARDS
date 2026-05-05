@@ -412,7 +412,6 @@ export function buildReportJobInsert(body: JsonObject): { data?: JsonObject; err
       total_steps: typeof body.totalSteps === "number" && body.totalSteps > 0 ? body.totalSteps : 1,
       completed_steps: 0,
       error_message: null,
-      job_payload: optionalJsonObject(body.jobPayload) ?? {},
       started_at: body.startedAt === null ? null : (optionalString(body.startedAt) ?? null),
       finished_at: null,
     },
