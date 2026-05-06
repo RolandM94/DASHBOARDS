@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Joyride, type Step, EVENTS, STATUS, type Controls } from "react-joyride";
 import { useTourStore } from "@/store/tourStore";
@@ -17,42 +17,35 @@ const STEPS: Step[] = [
     target: '[data-tour-id="sidebar-nav"]',
     title: "Welcome to Supercoolstuff",
     content:
-      "This is your analytics command centre. Use the sidebar to navigate between Analytics, Workbooks, Canvases, and Reports.",
+      "Use the sidebar to navigate between Analytics, Workbooks, Canvases, and Reports. Let's start by creating your first chart.",
     placement: "right",
   },
   {
     target: '[data-tour-id="new-workbook-cta"]',
     title: "Start with a Workbook",
     content:
-      "Create your first chart here. Upload a CSV or Excel file, then use the drag-and-drop chart builder to visualise your data.",
+      "Click 'New Workbook' to begin. You'll upload a CSV or Excel file, then build charts with the drag-and-drop builder.",
     placement: "bottom",
   },
   {
     target: '[data-tour-id="upload-dropzone"]',
     title: "Upload Your Data",
     content:
-      "Drop a CSV or Excel file here, or pick an existing dataset from the list. The platform auto-detects field types and sample values.",
+      "Drop a CSV or Excel file here, or pick an existing dataset. The platform auto-detects field types and data types.",
     placement: "bottom",
-  },
-  {
-    target: '[data-tour-id="chart-preview"]',
-    title: "Build Your Chart",
-    content:
-      "Add dimensions and metrics from the left panel, choose a chart type on the right, then watch the live preview update here. Add filters and sorting to refine your view.",
-    placement: "left",
   },
   {
     target: '[data-tour-id="add-block-btn"]',
     title: "Assemble a Dashboard",
     content:
-      "Combine your charts into dashboards on the Canvas. Add blocks from your workbooks, insert text annotations, apply global filters, and arrange everything on the grid.",
+      "Once you have charts, combine them into dashboards on the Canvas. Add widgets, text blocks, and global filters to build professional dashboards.",
     placement: "bottom",
   },
   {
     target: '[data-tour-id="publish-btn"]',
     title: "Publish Your Dashboard",
     content:
-      "Share your work. Publish privately, to your organisation, or publicly — each dashboard gets a shareable link.",
+      "Share your dashboard privately, with your organisation, or publicly. Each dashboard gets a shareable public link.",
     placement: "bottom",
   },
   {
@@ -64,30 +57,76 @@ const STEPS: Step[] = [
   },
 ];
 
-const NAV_TARGETS: Record<string, string> = {
-  2: "/analytics",
-  3: "/analytics/workbook/new",
-  4: "/analytics/workbook",
-  5: "/analytics/canvas/new",
-  6: "/analytics/canvas",
-  7: "/analytics/reports",
+// Maps which step requires navigation to which page (before showing the step)
+const STEP_PAGE: Record<number, string> = {
+  0: "/analytics",
+  1: "/analytics",
+  2: "/analytics/workbook/new",
+  3: "/analytics/canvas/new",
+  4: "/analytics/canvas/new",
+  5: "/analytics/reports",
 };
 
 export default function OnboardingTour() {
   const { isActive, markComplete, dismissTour } = useTourStore();
   const [stepIndex, setStepIndex] = useState(0);
-  const [isNavigating, setIsNavigating] = useState(false);
+  const [tourKey, setTourKey] = useState(0);
+  const isNavigatingRef = useRef(false);
+  const pendingStepRef = useRef<number | null>(null);
+  const targetRetriesRef = useRef(0);
   const pathname = usePathname();
   const router = useRouter();
 
+  // Reset everything when tour starts
   useEffect(() => {
-    if (!isActive || !isNavigating) return;
-    const timer = setTimeout(() => {
-      setIsNavigating(false);
-      setStepIndex((prev) => prev + 1);
-    }, 1200);
-    return () => clearTimeout(timer);
-  }, [pathname, isActive, isNavigating]);
+    if (isActive) {
+      setStepIndex(0);
+      setTourKey((k) => k + 1);
+      isNavigatingRef.current = false;
+      pendingStepRef.current = null;
+      targetRetriesRef.current = 0;
+    }
+  }, [isActive]);
+
+  // After navigation completes, advance to the pending step
+  useEffect(() => {
+    if (!isActive || pendingStepRef.current === null) return;
+    const step = pendingStepRef.current;
+    const expectedPage = STEP_PAGE[step];
+    if (!expectedPage) return;
+
+    const currentBase = pathname.split("/").slice(0, 3).join("/");
+    const expectedBase = expectedPage.split("/").slice(0, 3).join("/");
+
+    if (currentBase === expectedBase) {
+      // Page match — wait for DOM, then show the step
+      const timer = setTimeout(() => {
+        pendingStepRef.current = null;
+        isNavigatingRef.current = false;
+        setStepIndex(step);
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+  }, [pathname, isActive]);
+
+  const navigateForStep = useCallback(
+    (targetStep: number) => {
+      const page = STEP_PAGE[targetStep];
+      if (!page) return false;
+
+      const currentBase = pathname.split("/").slice(0, 3).join("/");
+      const targetBase = page.split("/").slice(0, 3).join("/");
+
+      if (currentBase !== targetBase) {
+        isNavigatingRef.current = true;
+        pendingStepRef.current = targetStep;
+        router.push(page);
+        return true;
+      }
+      return false;
+    },
+    [pathname, router]
+  );
 
   const handleEvent = useCallback(
     (data: TourEvent, _controls: Controls) => {
@@ -98,40 +137,54 @@ export default function OnboardingTour() {
         return;
       }
 
-      if (type === EVENTS.STEP_AFTER || type === EVENTS.TARGET_NOT_FOUND) {
-        if (action === "close") {
-          dismissTour();
+      if (action === "close") {
+        dismissTour();
+        return;
+      }
+
+      if (type === EVENTS.TARGET_NOT_FOUND) {
+        if (isNavigatingRef.current) return;
+
+        targetRetriesRef.current += 1;
+        if (targetRetriesRef.current <= 5) {
+          // Retry — wait for DOM to catch up, then force the same step
+          setTimeout(() => {
+            setStepIndex((prev) => prev);
+            setTourKey((k) => k + 1);
+          }, 600);
+          return;
+        }
+        targetRetriesRef.current = 0;
+      }
+
+      if (type === EVENTS.STEP_AFTER || (type === EVENTS.TARGET_NOT_FOUND && targetRetriesRef.current > 5)) {
+        targetRetriesRef.current = 0;
+        const currentIndex = index ?? stepIndex;
+        const nextIndex = action === "prev" ? Math.max(0, currentIndex - 1) : currentIndex + 1;
+
+        if (action === "prev") {
+          // For "prev", just go back — no navigation needed
+          setStepIndex(nextIndex);
           return;
         }
 
-        const currentIndex = index ?? 0;
-        const nextIndex = currentIndex + (action === "prev" ? -1 : 1);
-        const targetRoute = NAV_TARGETS[String(currentIndex + 1)];
+        // Try navigating to the page for the next step first
+        if (navigateForStep(nextIndex)) return;
 
-        if (action === "next" && targetRoute) {
-          const currentBase = pathname.split("/").slice(0, 3).join("/");
-          const targetBase = targetRoute.split("/").slice(0, 3).join("/");
-
-          if (currentBase !== targetBase && targetBase !== "/analytics") {
-            setIsNavigating(true);
-            router.push(targetRoute);
-            return;
-          }
-        }
-
+        // Already on the correct page — just advance
         setStepIndex(nextIndex);
       }
     },
-    [pathname, router, markComplete, dismissTour]
+    [stepIndex, pathname, router, markComplete, dismissTour, navigateForStep]
   );
 
-  if (!isActive) return null;
-
+  // Always mount the component, control via run + key
   return (
     <Joyride
+      key={tourKey}
       steps={STEPS}
       stepIndex={stepIndex}
-      run={isActive}
+      run={isActive && !isNavigatingRef.current}
       continuous
       onEvent={handleEvent}
       locale={{
@@ -145,6 +198,7 @@ export default function OnboardingTour() {
         showProgress: true,
         skipBeacon: true,
         buttons: ["back", "close", "primary", "skip"],
+        overlayClickAction: "close",
       }}
       styles={{
         tooltip: {

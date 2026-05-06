@@ -19,9 +19,9 @@ function loadSeen(): boolean {
   }
 }
 
-function saveSeen(value: boolean): void {
+function saveSeen(): void {
   try {
-    localStorage.setItem(STORAGE_KEY, String(value));
+    localStorage.setItem(STORAGE_KEY, "true");
   } catch {}
 }
 
@@ -32,12 +32,12 @@ export const useTourStore = create<TourState>((set) => ({
   startTour: () => set({ isActive: true }),
 
   markComplete: () => {
-    saveSeen(true);
+    saveSeen();
     set({ hasSeenTour: true, isActive: false });
   },
 
   dismissTour: () => {
-    saveSeen(true);
+    // Don't mark as seen — user can reopen the tour from the sidebar
     set({ isActive: false });
   },
 }));
