@@ -1058,7 +1058,7 @@ export function ReportWorkspace() {
             </div>
             <p className="mt-1 text-sm text-muted-foreground">Generate, edit, preview, and export reports from analytics sources.</p>
           </div>
-          <Button onClick={() => setCreateOpen(true)} className="gap-2">
+          <Button onClick={() => setCreateOpen(true)} className="gap-2" data-tour-id="new-report-btn">
             <Sparkles className="h-4 w-4" />
             New report
           </Button>

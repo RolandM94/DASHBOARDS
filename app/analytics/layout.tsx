@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -9,6 +9,9 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { DataLoader } from "@/components/providers/DataLoader";
+import OnboardingTour from "@/components/analytics/OnboardingTour";
+import TourLauncher from "@/components/analytics/TourLauncher";
+import { useTourStore } from "@/store/tourStore";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -150,6 +153,8 @@ export default function AnalyticsLayout({ children }: { children: React.ReactNod
   const [userType, setUserType]     = useState<"owner" | "member">("owner");
   const [userName, setUserName]     = useState<string>("");
   const [userEmail, setUserEmail]   = useState<string>("");
+  const { hasSeenTour, startTour }  = useTourStore();
+  const autoStartedRef              = useRef(false);
 
   useEffect(() => {
     const supabase = createClient();
@@ -186,6 +191,11 @@ export default function AnalyticsLayout({ children }: { children: React.ReactNod
         setGuardState("setup");
       } else {
         setGuardState("ready");
+        // Auto-start tour on first login
+        if (!hasSeenTour && !autoStartedRef.current) {
+          autoStartedRef.current = true;
+          setTimeout(() => startTour(), 1500);
+        }
       }
     });
   }, [router]);
@@ -220,6 +230,7 @@ export default function AnalyticsLayout({ children }: { children: React.ReactNod
   return (
     <>
       <DataLoader />
+      <OnboardingTour />
       <div className="flex h-full min-w-0 overflow-hidden">
         {/* Sidebar */}
         <aside className="w-56 shrink-0 border-r bg-white flex flex-col">
@@ -232,7 +243,7 @@ export default function AnalyticsLayout({ children }: { children: React.ReactNod
             </div>
           </div>
 
-          <nav className="flex-1 p-3 space-y-0.5">
+          <nav className="flex-1 p-3 space-y-0.5" data-tour-id="sidebar-nav">
             <NavLink href="/analytics">
               <BarChart2 className="h-4 w-4" />
               Analytics
@@ -279,6 +290,7 @@ export default function AnalyticsLayout({ children }: { children: React.ReactNod
                 </div>
               </div>
             )}
+            <TourLauncher />
             <button
               onClick={handleSignOut}
               className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"

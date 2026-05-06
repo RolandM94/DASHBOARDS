@@ -1031,7 +1031,7 @@ export function CanvasBuilder({ existingCanvas }: Props) {
               >
                 <Sparkles className="h-4 w-4" /> AI
               </Button>
-              <Button variant="outline" size="sm" className="gap-2" onClick={() => setAddOpen(true)}>
+              <Button variant="outline" size="sm" className="gap-2" onClick={() => setAddOpen(true)} data-tour-id="add-block-btn">
                 <Plus className="h-4 w-4" /> Add Block
               </Button>
               <Link href={`/analytics/reports?sourceType=canvas&sourceId=${canvas.id}`}>
@@ -1039,7 +1039,7 @@ export function CanvasBuilder({ existingCanvas }: Props) {
                   <FileText className="h-4 w-4" /> Report
                 </Button>
               </Link>
-              <Button variant="outline" size="sm" className="gap-2" onClick={() => setPublishOpen(true)}>
+              <Button variant="outline" size="sm" className="gap-2" onClick={() => setPublishOpen(true)} data-tour-id="publish-btn">
                 <Globe className="h-4 w-4" />
                 {canvas.published ? "Republish" : "Publish"}
               </Button>

@@ -343,6 +343,7 @@ export function StepBuild({ dataset, initialWorksheet, onSave, onBack }: Props) 
 
         {/* Center: live preview */}
         <div
+          data-tour-id="chart-preview"
           className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
           style={{
             backgroundColor: "#f8fafc",

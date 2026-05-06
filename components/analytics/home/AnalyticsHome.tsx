@@ -313,7 +313,7 @@ export function AnalyticsHome() {
             </p>
           </div>
           <div className="flex gap-2">
-            <Link href="/analytics/workbook/new">
+            <Link href="/analytics/workbook/new" data-tour-id="new-workbook-cta">
               <Button className="gap-2">
                 <Plus className="h-4 w-4" />
                 New Workbook

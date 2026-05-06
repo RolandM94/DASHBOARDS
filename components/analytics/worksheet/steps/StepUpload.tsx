@@ -182,7 +182,9 @@ export function StepUpload({ onParsed }: Props) {
           </p>
         </div>
 
-        <DropZone onFile={handleFile} loading={loading} />
+        <div data-tour-id="upload-dropzone">
+          <DropZone onFile={handleFile} loading={loading} />
+        </div>
 
         {/* Progress bar */}
         {loading && (
