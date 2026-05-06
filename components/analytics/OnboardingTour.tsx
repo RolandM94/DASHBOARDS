@@ -85,6 +85,8 @@ export default function OnboardingTour() {
   const pathname = usePathname();
   const router = useRouter();
 
+  const [retryTimer, setRetryTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
+
   // Reset everything when tour starts
   useEffect(() => {
     if (isActive) {
@@ -95,6 +97,12 @@ export default function OnboardingTour() {
       targetRetriesRef.current = 0;
     }
   }, [isActive]);
+
+  // Reset retry counter when step changes
+  useEffect(() => {
+    targetRetriesRef.current = 0;
+    if (retryTimer) clearTimeout(retryTimer);
+  }, [stepIndex]);
 
   // After navigation completes, advance to the pending step
   useEffect(() => {
@@ -153,18 +161,31 @@ export default function OnboardingTour() {
         if (isNavigatingRef.current) return;
 
         targetRetriesRef.current += 1;
+
         if (targetRetriesRef.current <= 8) {
-          setTimeout(() => {
-            setStepIndex((prev) => prev);
+          const timer = setTimeout(() => {
             setTourKey((k) => k + 1);
           }, 800);
+          setRetryTimer(timer);
           return;
         }
+
+        // Retries exhausted — clear timer and advance
+        if (retryTimer) clearTimeout(retryTimer);
         targetRetriesRef.current = 0;
+        setRetryTimer(null);
+
+        const currentIndex = index ?? stepIndex;
+        const nextIndex = currentIndex + 1;
+
+        if (navigateForStep(nextIndex)) return;
+        setStepIndex(nextIndex);
+        return;
       }
 
-      if (type === EVENTS.STEP_AFTER || (type === EVENTS.TARGET_NOT_FOUND && targetRetriesRef.current > 8)) {
+      if (type === EVENTS.STEP_AFTER) {
         targetRetriesRef.current = 0;
+        if (retryTimer) { clearTimeout(retryTimer); setRetryTimer(null); }
         const currentIndex = index ?? stepIndex;
         const nextIndex = action === "prev" ? Math.max(0, currentIndex - 1) : currentIndex + 1;
 
