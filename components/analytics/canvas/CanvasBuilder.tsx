@@ -1119,7 +1119,7 @@ export function CanvasBuilder({ existingCanvas }: Props) {
 
       {/* Name dialog */}
       <Dialog open={nameOpen} onOpenChange={() => {}}>
-        <DialogContent>
+        <DialogContent data-tour-id="canvas-name-dialog">
           <DialogHeader><DialogTitle>Name your canvas</DialogTitle></DialogHeader>
           <Input
             value={name}

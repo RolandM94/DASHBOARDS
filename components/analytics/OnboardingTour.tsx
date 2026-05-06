@@ -35,10 +35,17 @@ const STEPS: Step[] = [
     placement: "bottom",
   },
   {
-    target: '[data-tour-id="add-block-btn"]',
-    title: "Assemble a Dashboard",
+    target: '[data-tour-id="canvas-name-dialog"]',
+    title: "Create Your First Canvas",
     content:
-      "Once you have charts, combine them into dashboards on the Canvas. Add widgets, text blocks, and global filters to build professional dashboards.",
+      "Give your canvas a name and click 'Create Canvas'. Canvases are where you assemble charts, text, and filters into dashboards.",
+    placement: "bottom",
+  },
+  {
+    target: '[data-tour-id="add-block-btn"]',
+    title: "Add Blocks to Your Dashboard",
+    content:
+      "Click 'Add Block' to bring charts from your workbooks onto this canvas. You can also add text blocks and filters.",
     placement: "bottom",
   },
   {
@@ -64,7 +71,8 @@ const STEP_PAGE: Record<number, string> = {
   2: "/analytics/workbook/new",
   3: "/analytics/canvas/new",
   4: "/analytics/canvas/new",
-  5: "/analytics/reports",
+  5: "/analytics/canvas/new",
+  6: "/analytics/reports",
 };
 
 export default function OnboardingTour() {
@@ -99,12 +107,11 @@ export default function OnboardingTour() {
     const expectedBase = expectedPage.split("/").slice(0, 3).join("/");
 
     if (currentBase === expectedBase) {
-      // Page match — wait for DOM, then show the step
       const timer = setTimeout(() => {
         pendingStepRef.current = null;
         isNavigatingRef.current = false;
         setStepIndex(step);
-      }, 800);
+      }, 1000);
       return () => clearTimeout(timer);
     }
   }, [pathname, isActive]);
@@ -146,39 +153,33 @@ export default function OnboardingTour() {
         if (isNavigatingRef.current) return;
 
         targetRetriesRef.current += 1;
-        if (targetRetriesRef.current <= 5) {
-          // Retry — wait for DOM to catch up, then force the same step
+        if (targetRetriesRef.current <= 8) {
           setTimeout(() => {
             setStepIndex((prev) => prev);
             setTourKey((k) => k + 1);
-          }, 600);
+          }, 800);
           return;
         }
         targetRetriesRef.current = 0;
       }
 
-      if (type === EVENTS.STEP_AFTER || (type === EVENTS.TARGET_NOT_FOUND && targetRetriesRef.current > 5)) {
+      if (type === EVENTS.STEP_AFTER || (type === EVENTS.TARGET_NOT_FOUND && targetRetriesRef.current > 8)) {
         targetRetriesRef.current = 0;
         const currentIndex = index ?? stepIndex;
         const nextIndex = action === "prev" ? Math.max(0, currentIndex - 1) : currentIndex + 1;
 
         if (action === "prev") {
-          // For "prev", just go back — no navigation needed
           setStepIndex(nextIndex);
           return;
         }
 
-        // Try navigating to the page for the next step first
         if (navigateForStep(nextIndex)) return;
-
-        // Already on the correct page — just advance
         setStepIndex(nextIndex);
       }
     },
     [stepIndex, pathname, router, markComplete, dismissTour, navigateForStep]
   );
 
-  // Always mount the component, control via run + key
   return (
     <Joyride
       key={tourKey}
