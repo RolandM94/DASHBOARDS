@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
 import { Joyride, type Step, EVENTS, STATUS, type Controls } from "react-joyride";
 import { useTourStore } from "@/store/tourStore";
 
@@ -17,131 +16,179 @@ const STEPS: Step[] = [
     target: '[data-tour-id="sidebar-nav"]',
     title: "Welcome to Supercoolstuff",
     content:
-      "Use the sidebar to navigate between Analytics, Workbooks, Canvases, and Reports. Let's start by creating your first chart.",
+      "This is your analytics command centre. The sidebar lets you navigate between Analytics, Workbooks, Canvases, and Reports.",
     placement: "right",
   },
   {
-    target: '[data-tour-id="new-workbook-cta"]',
-    title: "Start with a Workbook",
+    target: '[data-tour-id="ai-command-bar"]',
+    title: "AI-Powered Charts",
     content:
-      "Click 'New Workbook' to begin. You'll upload a CSV or Excel file, then build charts with the drag-and-drop builder.",
+      "Ask the AI to create charts for you. Just describe what you want — 'Show monthly revenue by region' — and it builds the chart automatically.",
+    placement: "bottom",
+  },
+  {
+    target: '[data-tour-id="new-workbook-cta"]',
+    title: "Create a Workbook",
+    content:
+      "Click 'New Workbook' to upload your data. You'll build charts here before assembling them into dashboards.",
     placement: "bottom",
   },
   {
     target: '[data-tour-id="upload-dropzone"]',
     title: "Upload Your Data",
     content:
-      "Drop a CSV or Excel file here, or pick an existing dataset. The platform auto-detects field types and data types.",
+      "Drop a CSV or Excel file here, or choose an existing dataset. The platform auto-detects column types and sample values.",
+    placement: "bottom",
+  },
+  {
+    target: '[data-tour-id="new-canvas-cta"]',
+    title: "Next: Create a Canvas",
+    content:
+      "Once you have workbooks, combine them into dashboards. Click 'New Canvas' to get started.",
     placement: "bottom",
   },
   {
     target: '[data-tour-id="canvas-name-dialog"]',
-    title: "Create Your First Canvas",
+    title: "Name Your Canvas",
     content:
-      "Give your canvas a name and click 'Create Canvas'. Canvases are where you assemble charts, text, and filters into dashboards.",
+      "Give your dashboard a name — like 'Q1 Performance Review'. Canvases hold all your widgets, text, and filters in one place.",
     placement: "bottom",
   },
   {
     target: '[data-tour-id="add-block-btn"]',
-    title: "Add Blocks to Your Dashboard",
+    title: "Add Widgets",
     content:
-      "Click 'Add Block' to bring charts from your workbooks onto this canvas. You can also add text blocks and filters.",
+      "Click 'Add Block' to bring charts from your workbooks onto this canvas. You can also add text annotations and dataset previews.",
     placement: "bottom",
   },
   {
     target: '[data-tour-id="publish-btn"]',
-    title: "Publish Your Dashboard",
+    title: "Publish to Share",
     content:
-      "Share your dashboard privately, with your organisation, or publicly. Each dashboard gets a shareable public link.",
+      "Share your dashboard with your organisation or publicly. Once published, it gets a shareable link anyone can view.",
+    placement: "bottom",
+  },
+  {
+    target: '[data-tour-id="home-reports-cta"]',
+    title: "Head to Reports",
+    content:
+      "Now that you've built a dashboard, let's explore AI-powered reports. Click 'Reports' to continue.",
     placement: "bottom",
   },
   {
     target: '[data-tour-id="new-report-btn"]',
-    title: "Generate AI Reports",
+    title: "AI Report Generation",
     content:
-      "Turn any dashboard into a professional report. AI generates the blueprint, writes the narrative, and exports to Word, PDF, or Excel.",
+      "Select any dashboard or canvas, and AI will generate a complete report — with a blueprint, narrative sections, charts, and exports to Word, PDF, or Excel.",
     placement: "bottom",
   },
 ];
 
-// Maps which step requires navigation to which page (before showing the step)
+// Maps step index to the page where that step's target lives
 const STEP_PAGE: Record<number, string> = {
   0: "/analytics",
   1: "/analytics",
-  2: "/analytics/workbook/new",
-  3: "/analytics/canvas/new",
-  4: "/analytics/canvas/new",
+  2: "/analytics",
+  3: "/analytics/workbook/new",
+  4: "/analytics",
   5: "/analytics/canvas/new",
-  6: "/analytics/reports",
+  6: "/analytics/canvas/new",
+  7: "/analytics/canvas/new",
+  8: "/analytics",
+  9: "/analytics/reports",
 };
 
+const MAX_RETRIES = 4;
+const RETRY_DELAY_MS = 1500;
+const NAV_DELAY_MS = 1200;
+
+const STEP_INDEX_KEY = "supercoolstuff_tour_step";
+
+function getStoredStepIndex(): number {
+  try {
+    const v = sessionStorage.getItem(STEP_INDEX_KEY);
+    return v ? parseInt(v, 10) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function storeStepIndex(idx: number): void {
+  try { sessionStorage.setItem(STEP_INDEX_KEY, String(idx)); } catch {}
+}
+
+function clearStoredStep(): void {
+  try { sessionStorage.removeItem(STEP_INDEX_KEY); } catch {}
+}
+
 export default function OnboardingTour() {
-  const { isActive, markComplete, dismissTour } = useTourStore();
-  const [stepIndex, setStepIndex] = useState(0);
+  const { isActive, markComplete, dismissTour, setActive } = useTourStore();
+  const [stepIndex, setStepIndex] = useState(() => isActive ? getStoredStepIndex() : 0);
   const [tourKey, setTourKey] = useState(0);
-  const isNavigatingRef = useRef(false);
+  const retryCountRef = useRef(0);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const navTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingStepRef = useRef<number | null>(null);
-  const targetRetriesRef = useRef(0);
-  const pathname = usePathname();
-  const router = useRouter();
+  const pathnameRef = useRef(typeof window !== "undefined" ? window.location.pathname : "/analytics");
 
-  const [retryTimer, setRetryTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
+  // Keep pathnameRef updated
+  useEffect(() => {
+    pathnameRef.current = window.location.pathname;
+  });
 
-  // Reset everything when tour starts
+  // Reset on tour start
   useEffect(() => {
     if (isActive) {
-      setStepIndex(0);
+      setStepIndex(getStoredStepIndex());
       setTourKey((k) => k + 1);
-      isNavigatingRef.current = false;
-      pendingStepRef.current = null;
-      targetRetriesRef.current = 0;
+      retryCountRef.current = 0;
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
     }
+    return () => {
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+      if (navTimerRef.current) clearTimeout(navTimerRef.current);
+    };
   }, [isActive]);
 
-  // Reset retry counter when step changes
+  // Persist step index whenever it changes
   useEffect(() => {
-    targetRetriesRef.current = 0;
-    if (retryTimer) clearTimeout(retryTimer);
+    storeStepIndex(stepIndex);
   }, [stepIndex]);
 
-  // After navigation completes, advance to the pending step
+  // Reset retries when step changes
   useEffect(() => {
-    if (!isActive || pendingStepRef.current === null) return;
-    const step = pendingStepRef.current;
-    const expectedPage = STEP_PAGE[step];
-    if (!expectedPage) return;
-
-    const currentBase = pathname.split("/").slice(0, 3).join("/");
-    const expectedBase = expectedPage.split("/").slice(0, 3).join("/");
-
-    if (currentBase === expectedBase) {
-      const timer = setTimeout(() => {
-        pendingStepRef.current = null;
-        isNavigatingRef.current = false;
-        setStepIndex(step);
-      }, 1000);
-      return () => clearTimeout(timer);
+    retryCountRef.current = 0;
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
     }
-  }, [pathname, isActive]);
+  }, [stepIndex]);
 
-  const navigateForStep = useCallback(
-    (targetStep: number) => {
-      const page = STEP_PAGE[targetStep];
-      if (!page) return false;
+  function currentPageBase(): string {
+    return pathnameRef.current.split("/").slice(0, 3).join("/");
+  }
 
-      const currentBase = pathname.split("/").slice(0, 3).join("/");
-      const targetBase = page.split("/").slice(0, 3).join("/");
+  function navigateToPage(page: string): boolean {
+    const cur = currentPageBase();
+    const tgt = page.split("/").slice(0, 3).join("/");
+    if (cur === tgt) return false;
 
-      if (currentBase !== targetBase) {
-        isNavigatingRef.current = true;
-        pendingStepRef.current = targetStep;
-        router.push(page);
-        return true;
-      }
-      return false;
-    },
-    [pathname, router]
-  );
+    // Kill any pending timers before navigating
+    if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    if (navTimerRef.current) clearTimeout(navTimerRef.current);
+
+    // Use location.href for a clean page load (ensures targets exist)
+    window.location.href = page;
+    return true;
+  }
+
+  const scheduleRetry = useCallback(() => {
+    if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    retryTimerRef.current = setTimeout(() => {
+      retryTimerRef.current = null;
+      setTourKey((k) => k + 1);
+    }, RETRY_DELAY_MS);
+  }, []);
 
   const handleEvent = useCallback(
     (data: TourEvent, _controls: Controls) => {
@@ -158,34 +205,31 @@ export default function OnboardingTour() {
       }
 
       if (type === EVENTS.TARGET_NOT_FOUND) {
-        if (isNavigatingRef.current) return;
+        retryCountRef.current += 1;
 
-        targetRetriesRef.current += 1;
-
-        if (targetRetriesRef.current <= 8) {
-          const timer = setTimeout(() => {
-            setTourKey((k) => k + 1);
-          }, 800);
-          setRetryTimer(timer);
+        if (retryCountRef.current <= MAX_RETRIES) {
+          scheduleRetry();
           return;
         }
 
-        // Retries exhausted — clear timer and advance
-        if (retryTimer) clearTimeout(retryTimer);
-        targetRetriesRef.current = 0;
-        setRetryTimer(null);
-
+        // Retries exhausted — skip this step
+        retryCountRef.current = 0;
+        if (retryTimerRef.current) {
+          clearTimeout(retryTimerRef.current);
+          retryTimerRef.current = null;
+        }
         const currentIndex = index ?? stepIndex;
-        const nextIndex = currentIndex + 1;
-
-        if (navigateForStep(nextIndex)) return;
-        setStepIndex(nextIndex);
+        setStepIndex(currentIndex + 1);
         return;
       }
 
       if (type === EVENTS.STEP_AFTER) {
-        targetRetriesRef.current = 0;
-        if (retryTimer) { clearTimeout(retryTimer); setRetryTimer(null); }
+        retryCountRef.current = 0;
+        if (retryTimerRef.current) {
+          clearTimeout(retryTimerRef.current);
+          retryTimerRef.current = null;
+        }
+
         const currentIndex = index ?? stepIndex;
         const nextIndex = action === "prev" ? Math.max(0, currentIndex - 1) : currentIndex + 1;
 
@@ -194,11 +238,21 @@ export default function OnboardingTour() {
           return;
         }
 
-        if (navigateForStep(nextIndex)) return;
+        // Auto-navigate to the page for the next step if needed
+        const nextPage = STEP_PAGE[nextIndex];
+        if (nextPage && nextPage !== currentPageBase()) {
+          setStepIndex(nextIndex); // Advance before navigation so step persists
+          if (navTimerRef.current) clearTimeout(navTimerRef.current);
+          navTimerRef.current = setTimeout(() => {
+            navigateToPage(nextPage);
+          }, NAV_DELAY_MS);
+          return;
+        }
+
         setStepIndex(nextIndex);
       }
     },
-    [stepIndex, pathname, router, markComplete, dismissTour, navigateForStep]
+    [stepIndex, markComplete, dismissTour, scheduleRetry]
   );
 
   return (
@@ -206,7 +260,7 @@ export default function OnboardingTour() {
       key={tourKey}
       steps={STEPS}
       stepIndex={stepIndex}
-      run={isActive && !isNavigatingRef.current}
+      run={isActive}
       continuous
       onEvent={handleEvent}
       locale={{
@@ -225,8 +279,8 @@ export default function OnboardingTour() {
       styles={{
         tooltip: {
           borderRadius: 12,
-          boxShadow: "0 4px 24px rgba(0,0,0,0.18)",
-          padding: "20px 24px",
+          boxShadow: "0 6px 28px rgba(0,0,0,0.22)",
+          padding: "22px 26px",
         },
         tooltipTitle: {
           fontSize: 16,
@@ -235,7 +289,7 @@ export default function OnboardingTour() {
         },
         tooltipContent: {
           fontSize: 13,
-          lineHeight: 1.6,
+          lineHeight: 1.65,
           color: "#475569",
         },
         buttonPrimary: {
@@ -243,13 +297,13 @@ export default function OnboardingTour() {
           borderRadius: 8,
           fontSize: 13,
           fontWeight: 600,
-          padding: "8px 16px",
+          padding: "9px 18px",
           color: "#ffffff",
         },
         buttonBack: {
           color: "#64748b",
           fontSize: 13,
-          marginRight: 8,
+          marginRight: 10,
         },
         buttonSkip: {
           color: "#94a3b8",

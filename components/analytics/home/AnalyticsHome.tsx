@@ -319,13 +319,13 @@ export function AnalyticsHome() {
                 New Workbook
               </Button>
             </Link>
-            <Link href="/analytics/canvas/new">
+            <Link href="/analytics/canvas/new" data-tour-id="new-canvas-cta">
               <Button variant="outline" className="gap-2">
                 <Plus className="h-4 w-4" />
                 New Canvas
               </Button>
             </Link>
-            <Link href="/analytics/reports">
+            <Link href="/analytics/reports" data-tour-id="home-reports-cta">
               <Button variant="outline" className="gap-2">
                 <FileText className="h-4 w-4" />
                 Reports
@@ -335,7 +335,9 @@ export function AnalyticsHome() {
         </div>
 
         {/* AI Command Bar */}
-        <AICommandBar />
+        <div data-tour-id="ai-command-bar">
+          <AICommandBar />
+        </div>
 
         {/* Workbooks */}
         <section>
