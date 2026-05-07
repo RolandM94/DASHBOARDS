@@ -191,10 +191,10 @@ export function DatasetTableView({ dataset }: Props) {
       <div className="shrink-0 border-b bg-white">
         <div className="flex min-w-0 items-center justify-between gap-4 px-5 py-3">
           <div className="flex min-w-0 items-center gap-3">
-            <Link href="/analytics">
+            <Link href="/home">
               <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground">
                 <ArrowLeft className="h-4 w-4" />
-                Analytics
+                Home
               </Button>
             </Link>
             <div className="h-8 w-8 shrink-0 rounded-lg bg-sky-50 flex items-center justify-center">

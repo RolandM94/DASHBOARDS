@@ -191,7 +191,7 @@ export default function AnalyticsLayout({ children }: { children: React.ReactNod
         .single();
 
       if (profileError) {
-        console.error("AnalyticsLayout: failed to load profile", profileError);
+        console.error("HomeLayout: failed to load profile", profileError);
         setGuardState("ready");
         return;
       }
@@ -279,19 +279,19 @@ export default function AnalyticsLayout({ children }: { children: React.ReactNod
           </div>
 
           <nav className={cn("flex-1 space-y-0.5 overflow-hidden", collapsed ? "p-2" : "p-3")} data-tour-id="sidebar-nav">
-            <NavLink href="/analytics" label="Home" collapsed={collapsed}>
+            <NavLink href="/home" label="Home" collapsed={collapsed}>
               <BarChart2 className="h-4 w-4 shrink-0" />
               {!collapsed && <span>Home</span>}
             </NavLink>
-            <NavLink href="/analytics/workbook/new" label="New Workbook" collapsed={collapsed}>
+            <NavLink href="/home/workbook/new" label="New Workbook" collapsed={collapsed}>
               <Plus className="h-4 w-4 shrink-0" />
               {!collapsed && <span>New Workbook</span>}
             </NavLink>
-            <NavLink href="/analytics/canvas/new" label="New Canvas" collapsed={collapsed}>
+            <NavLink href="/home/canvas/new" label="New Canvas" collapsed={collapsed}>
               <LayoutDashboard className="h-4 w-4 shrink-0" />
               {!collapsed && <span>New Canvas</span>}
             </NavLink>
-            <NavLink href="/analytics/reports" label="Reports" collapsed={collapsed}>
+            <NavLink href="/home/reports" label="Reports" collapsed={collapsed}>
               <FileText className="h-4 w-4 shrink-0" />
               {!collapsed && <span>Reports</span>}
             </NavLink>
@@ -306,7 +306,7 @@ export default function AnalyticsLayout({ children }: { children: React.ReactNod
                     </p>
                   </div>
                 )}
-                <NavLink href="/analytics/settings/org" label="Settings" collapsed={collapsed}>
+                <NavLink href="/home/settings/org" label="Settings" collapsed={collapsed}>
                   <Building2 className="h-4 w-4 shrink-0" />
                   {!collapsed && <span>Stakeholder Management</span>}
                 </NavLink>

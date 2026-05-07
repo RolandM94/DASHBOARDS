@@ -76,8 +76,8 @@ export default function DashboardPage() {
             This dashboard may not exist or hasn&apos;t been published yet.
           </p>
         </div>
-        <Link href="/analytics">
-          <Button variant="outline" size="sm">Go to Analytics</Button>
+        <Link href="/home">
+          <Button variant="outline" size="sm">Go to Home</Button>
         </Link>
       </div>
     );

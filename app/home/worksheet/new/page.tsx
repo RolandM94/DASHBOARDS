@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
 export default function LegacyNewWorksheetPage() {
-  redirect("/analytics/workbook/new");
+  redirect("/home/workbook/new");
 }

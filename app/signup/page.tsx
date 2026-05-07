@@ -65,7 +65,7 @@ export default function SignupPage() {
         window.location.assign("/login");
         return;
       }
-      window.location.assign("/analytics");
+      window.location.assign("/home");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
       setLoading(false);

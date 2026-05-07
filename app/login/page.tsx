@@ -13,7 +13,7 @@ import Link from "next/link";
 // extract it into its own component so the outer shell can always hydrate.
 function LoginForm() {
   const searchParams = useSearchParams();
-  const next = searchParams.get("next") ?? "/analytics";
+  const next = searchParams.get("next") ?? "/home";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

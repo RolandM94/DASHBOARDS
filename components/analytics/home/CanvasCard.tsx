@@ -69,7 +69,7 @@ export function CanvasCard({ canvas }: { canvas: Canvas }) {
       {/* Coloured accent strip */}
       <div className="h-1 w-full" style={{ backgroundColor: CANVAS_COLOR }} />
 
-      <Link href={`/analytics/canvas/${canvas.id}`} className="block p-4 space-y-3 transition-all duration-200 hover:bg-slate-50/60">
+      <Link href={`/home/canvas/${canvas.id}`} className="block p-4 space-y-3 transition-all duration-200 hover:bg-slate-50/60">
         {/* Icon + delete */}
         <div className="flex items-start justify-between">
           <div

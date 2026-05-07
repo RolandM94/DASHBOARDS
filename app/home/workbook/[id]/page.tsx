@@ -25,8 +25,8 @@ export default function EditWorkbookPage() {
     return (
       <div className="h-full flex items-center justify-center flex-col gap-4">
         <p className="text-muted-foreground">Workbook not found.</p>
-        <Link href="/analytics">
-          <Button variant="outline">Back to Analytics</Button>
+        <Link href="/home">
+          <Button variant="outline">Back to Home</Button>
         </Link>
       </div>
     );

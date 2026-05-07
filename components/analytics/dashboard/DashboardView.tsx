@@ -740,7 +740,7 @@ export function DashboardView({ dashboard }: Props) {
               <FileDown className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Export PDF</span>
             </Button>
-            <Link href={`/analytics/reports?sourceType=dashboard&sourceId=${dashboard.id}`}>
+            <Link href={`/home/reports?sourceType=dashboard&sourceId=${dashboard.id}`}>
               <Button variant="outline" size="sm" className="gap-1.5 text-xs h-8 px-2.5 sm:px-3">
                 <FileText className="h-3.5 w-3.5" />
                 <span className="hidden sm:inline">Report</span>

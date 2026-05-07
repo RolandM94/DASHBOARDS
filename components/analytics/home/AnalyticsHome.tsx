@@ -307,25 +307,25 @@ export function AnalyticsHome() {
         {/* Header */}
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Analytics</h1>
+            <h1 className="text-2xl font-bold tracking-tight">Home</h1>
             <p className="text-sm text-muted-foreground mt-1">
               Build workbooks, create canvases, and publish dashboards.
             </p>
           </div>
           <div className="flex gap-2">
-            <Link href="/analytics/workbook/new" data-tour-id="new-workbook-cta">
+            <Link href="/home/workbook/new" data-tour-id="new-workbook-cta">
               <Button className="gap-2">
                 <Plus className="h-4 w-4" />
                 New Workbook
               </Button>
             </Link>
-            <Link href="/analytics/canvas/new" data-tour-id="new-canvas-cta">
+            <Link href="/home/canvas/new" data-tour-id="new-canvas-cta">
               <Button variant="outline" className="gap-2">
                 <Plus className="h-4 w-4" />
                 New Canvas
               </Button>
             </Link>
-            <Link href="/analytics/reports" data-tour-id="home-reports-cta">
+            <Link href="/home/reports" data-tour-id="home-reports-cta">
               <Button variant="outline" className="gap-2">
                 <FileText className="h-4 w-4" />
                 Reports
@@ -346,7 +346,7 @@ export function AnalyticsHome() {
             iconColor="#10b981"
             title="Workbooks"
             count={wsHydrated ? worksheets.length : 0}
-            href="/analytics/workbook/new"
+            href="/home/workbook/new"
             addLabel="New"
           />
           {!wsHydrated ? (
@@ -355,7 +355,7 @@ export function AnalyticsHome() {
             <EmptyState
               icon={BarChart2}
               message="No workbooks yet — upload a dataset and build your first chart."
-              href="/analytics/workbook/new"
+              href="/home/workbook/new"
               label="Create workbook"
             />
           ) : (
@@ -377,7 +377,7 @@ export function AnalyticsHome() {
             iconColor="#7C3AED"
             title="Canvases"
             count={cvHydrated ? canvases.length : 0}
-            href="/analytics/canvas/new"
+            href="/home/canvas/new"
             addLabel="New"
           />
           {!cvHydrated ? (
@@ -386,7 +386,7 @@ export function AnalyticsHome() {
             <EmptyState
               icon={LayoutDashboard}
               message="No canvases yet — combine workbook sheets into a shareable dashboard."
-              href="/analytics/canvas/new"
+              href="/home/canvas/new"
               label="Create canvas"
               variant="outline"
             />
@@ -413,7 +413,7 @@ export function AnalyticsHome() {
                   {ownDatasets.length}
                 </span>
               </div>
-              <Link href="/analytics/workbook/new">
+              <Link href="/home/workbook/new">
                 <Button size="sm" variant="ghost" className="gap-1.5 text-xs text-muted-foreground h-7">
                   <Plus className="h-3.5 w-3.5" />
                   Add Dataset
@@ -424,7 +424,7 @@ export function AnalyticsHome() {
               <EmptyState
                 icon={Database}
                 message="No datasets yet — upload a file to start building workbooks."
-                href="/analytics/workbook/new"
+                href="/home/workbook/new"
                 label="Upload dataset"
               />
             ) : (
@@ -436,7 +436,7 @@ export function AnalyticsHome() {
                       dataset={d}
                       onShare={openShare}
                       onDelete={removeDataset}
-                      onOpen={(dataset) => router.push(`/analytics/datasets/${dataset.id}`)}
+                      onOpen={(dataset) => router.push(`/home/datasets/${dataset.id}`)}
                     />
                   ))}
                 </div>

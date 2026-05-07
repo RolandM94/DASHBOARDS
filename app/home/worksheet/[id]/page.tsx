@@ -6,5 +6,5 @@ export default async function LegacyEditWorksheetPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  redirect(`/analytics/workbook/${id}`);
+  redirect(`/home/workbook/${id}`);
 }

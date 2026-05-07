@@ -86,16 +86,16 @@ const STEPS: Step[] = [
 
 // Maps step index to the page where that step's target lives
 const STEP_PAGE: Record<number, string> = {
-  0: "/analytics",
-  1: "/analytics",
-  2: "/analytics",
-  3: "/analytics/workbook/new",
-  4: "/analytics",
-  5: "/analytics/canvas/new",
-  6: "/analytics/canvas/new",
-  7: "/analytics/canvas/new",
-  8: "/analytics",
-  9: "/analytics/reports",
+  0: "/home",
+  1: "/home",
+  2: "/home",
+  3: "/home/workbook/new",
+  4: "/home",
+  5: "/home/canvas/new",
+  6: "/home/canvas/new",
+  7: "/home/canvas/new",
+  8: "/home",
+  9: "/home/reports",
 };
 
 const MAX_RETRIES = 4;
@@ -129,7 +129,7 @@ export default function OnboardingTour() {
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingStepRef = useRef<number | null>(null);
-  const pathnameRef = useRef(typeof window !== "undefined" ? window.location.pathname : "/analytics");
+  const pathnameRef = useRef(typeof window !== "undefined" ? window.location.pathname : "/home");
 
   // Keep pathnameRef updated
   useEffect(() => {

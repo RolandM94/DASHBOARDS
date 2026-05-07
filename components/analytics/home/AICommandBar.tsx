@@ -228,7 +228,7 @@ export function AICommandBar() {
 
       const worksheet = await res.json();
       addWorksheet(worksheet);
-      router.push(`/analytics/workbook/${worksheet.id}`);
+      router.push(`/home/workbook/${worksheet.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create workbook");
       setPhase("error");

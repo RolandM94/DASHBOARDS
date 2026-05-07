@@ -237,7 +237,7 @@ export function StepBuild({ dataset, initialWorksheet, onSave, onBack }: Props) 
             </span>
           )}
           {savedId && (
-            <Button variant="outline" size="sm" className="gap-2" onClick={() => router.push("/analytics/canvas/new")}>
+            <Button variant="outline" size="sm" className="gap-2" onClick={() => router.push("/home/canvas/new")}>
               <LayoutDashboard className="h-4 w-4" />
               Add to Canvas
             </Button>

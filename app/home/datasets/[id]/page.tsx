@@ -24,8 +24,8 @@ export default function DatasetPage() {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4">
         <p className="text-sm text-muted-foreground">Dataset not found.</p>
-        <Link href="/analytics">
-          <Button variant="outline">Back to Analytics</Button>
+        <Link href="/home">
+          <Button variant="outline">Back to Home</Button>
         </Link>
       </div>
     );

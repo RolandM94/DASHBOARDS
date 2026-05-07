@@ -577,7 +577,7 @@ function WidgetCard({
             </button>
             {ws && (
               <a
-                href={`/analytics/workbook/${ws.id}`}
+                href={`/home/workbook/${ws.id}`}
                 className="h-6 w-6 flex items-center justify-center rounded-md text-gray-300 hover:text-gray-500 hover:bg-gray-100 transition-all"
                 title="Edit workbook"
               >
@@ -1005,10 +1005,10 @@ export function CanvasBuilder({ existingCanvas }: Props) {
       {/* Top bar */}
       <div className="flex items-center justify-between px-4 py-3 border-b bg-white shrink-0">
         <div className="flex items-center gap-3">
-          <Link href="/analytics">
+          <Link href="/home">
             <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground">
               <ArrowLeft className="h-4 w-4" />
-              Analytics
+              Home
             </Button>
           </Link>
           {canvas && (
@@ -1034,7 +1034,7 @@ export function CanvasBuilder({ existingCanvas }: Props) {
               <Button variant="outline" size="sm" className="gap-2" onClick={() => setAddOpen(true)} data-tour-id="add-block-btn">
                 <Plus className="h-4 w-4" /> Add Block
               </Button>
-              <Link href={`/analytics/reports?sourceType=canvas&sourceId=${canvas.id}`}>
+              <Link href={`/home/reports?sourceType=canvas&sourceId=${canvas.id}`}>
                 <Button variant="outline" size="sm" className="gap-2">
                   <FileText className="h-4 w-4" /> Report
                 </Button>
@@ -1129,7 +1129,7 @@ export function CanvasBuilder({ existingCanvas }: Props) {
             onKeyDown={(e) => e.key === "Enter" && name.trim() && initCanvas(name)}
           />
           <DialogFooter>
-            <Button variant="outline" onClick={() => router.push("/analytics")}>Cancel</Button>
+            <Button variant="outline" onClick={() => router.push("/home")}>Cancel</Button>
             <Button onClick={() => initCanvas(name)} disabled={!name.trim()}>Create Canvas</Button>
           </DialogFooter>
         </DialogContent>
@@ -1220,7 +1220,7 @@ export function CanvasBuilder({ existingCanvas }: Props) {
               {worksheets.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
                   No workbooks yet.{" "}
-                  <Link href="/analytics/workbook/new" className="text-brand underline">Create one first.</Link>
+                  <Link href="/home/workbook/new" className="text-brand underline">Create one first.</Link>
                 </p>
               ) : (
                 <div className="space-y-3">
@@ -1245,7 +1245,7 @@ export function CanvasBuilder({ existingCanvas }: Props) {
                             </p>
                           </div>
                           <Link
-                            href={`/analytics/workbook/${workbook.id}`}
+                            href={`/home/workbook/${workbook.id}`}
                             className="shrink-0 text-xs font-medium text-brand hover:underline"
                             onClick={() => setAddOpen(false)}
                           >

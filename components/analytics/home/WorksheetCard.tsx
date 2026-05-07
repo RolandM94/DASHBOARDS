@@ -76,7 +76,7 @@ export function WorksheetCard({ worksheet }: { worksheet: Worksheet }) {
         </DialogContent>
       </Dialog>
 
-      <Link href={`/analytics/workbook/${worksheet.id}`} className="block group h-full">
+      <Link href={`/home/workbook/${worksheet.id}`} className="block group h-full">
         <div
           className="relative flex flex-col h-full rounded-xl border bg-white overflow-hidden transition-all duration-200 hover:shadow-md hover:-translate-y-0.5"
           style={{ boxShadow: "0px 0px 1px 0px rgba(0,0,0,.15), 0px 1px 4px 0px rgba(0,0,0,.04)" }}

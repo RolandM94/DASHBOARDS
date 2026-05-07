@@ -20,10 +20,10 @@ export default function NotFound() {
         <p className="text-sm text-muted-foreground leading-relaxed mb-6">
           The page you&apos;re looking for doesn&apos;t exist or has been moved.
         </p>
-        <Link href="/analytics">
+        <Link href="/home">
           <Button className="gap-2">
             <BarChart2 className="h-4 w-4" />
-            Go to Analytics
+            Go to Home
           </Button>
         </Link>
       </div>
