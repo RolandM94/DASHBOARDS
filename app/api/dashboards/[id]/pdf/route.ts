@@ -36,6 +36,7 @@ function toWorksheet(row: DashboardWorksheetRow): Worksheet {
 }
 
 export const maxDuration = 60;
+export const runtime = "nodejs";
 
 const permissionLabel: Record<string, string> = {
   private: "Private",

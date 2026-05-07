@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useLayoutEffect, useEffect, useMemo, useCallback } from "react";
+import { useState, useRef, useLayoutEffect, useEffect, useMemo } from "react";
 import {
   ActiveGlobalFilters, CanvasBlock, FilterBlockConfig,
   GlobalFilterValue, GridLayoutItem, PublishedDashboard,
@@ -63,6 +63,10 @@ function smartFiltersForApi(activeSmartFilters: ActiveSmartFilters) {
     value: id,
     label: "Smart Filter",
   }));
+}
+
+function sanitizeDownloadName(value: string): string {
+  return value.replace(/[<>:"/\\|?*]/g, "-").trim() || "dashboard";
 }
 
 // ── AutoSizer ─────────────────────────────────────────────────────
@@ -712,23 +716,39 @@ export function DashboardView({ dashboard }: Props) {
     setTimeout(() => setCopied(false), 2000);
   }
 
-  function exportPDF() {
+  async function exportPDF() {
+    if (exportingPdf) return;
     setExportingPdf(true);
-    const params = new URLSearchParams();
-    const encoded = encodeFiltersParam(activeFilters);
-    if (encoded) params.set("filters", encoded);
-    if (activeSmartFilters.length > 0) {
-      params.set("smartFilters", JSON.stringify(activeSmartFilters));
+    try {
+      const params = new URLSearchParams();
+      const encoded = encodeFiltersParam(activeFilters);
+      if (encoded) params.set("filters", encoded);
+      if (activeSmartFilters.length > 0) {
+        params.set("smartFilters", JSON.stringify(activeSmartFilters));
+      }
+      const qs = params.toString();
+      const url = `/api/dashboards/${dashboard.id}/pdf${qs ? `?${qs}` : ""}`;
+      const response = await fetch(url);
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(body.error ?? `PDF export failed (${response.status})`);
+      }
+
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = `${sanitizeDownloadName(dashboard.title)}.pdf`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "PDF export failed");
+    } finally {
+      setExportingPdf(false);
     }
-    const qs = params.toString();
-    const url = `/api/dashboards/${dashboard.id}/pdf${qs ? `?${qs}` : ""}`;
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `${dashboard.title}.pdf`;
-    document.body.appendChild(anchor);
-    anchor.click();
-    document.body.removeChild(anchor);
-    setTimeout(() => setExportingPdf(false), 2000);
   }
 
   const PermIcon = permissionIcon[dashboard.permission];
