@@ -7,7 +7,7 @@ import { useWorksheetStore } from "@/store/worksheetStore";
 import { DashboardView } from "@/components/analytics/dashboard/DashboardView";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { BarChart2, Loader2 } from "lucide-react";
+import { BarChart2, Loader2, AlertTriangle } from "lucide-react";
 import type { PublishedDashboard, Worksheet, Dataset } from "@/types";
 
 export default function DashboardPage() {
@@ -21,6 +21,7 @@ export default function DashboardPage() {
   const [dashboard, setDashboard] = useState<PublishedDashboard | null>(storeDb ?? null);
   const [loading, setLoading] = useState(!storeDb);
   const [notFound, setNotFound] = useState(false);
+  const [missingCount, setMissingCount] = useState(0);
 
   useEffect(() => {
     if (storeDb) {
@@ -42,6 +43,35 @@ export default function DashboardPage() {
 
       // Hydrate stores so charts can render
       for (const ds of datasets) addDataset(ds);
+
+      // Collect all worksheet IDs referenced by widget blocks
+      const widgetWsIds = new Set(
+        (db.blocks ?? [])
+          .filter((b) => b.type === "widget")
+          .map((b) => (b as { worksheetId?: string }).worksheetId)
+          .filter(Boolean)
+      );
+      const fetchedWsIds = new Set(worksheets.map((ws) => ws.id));
+
+      // Create stub entries for missing worksheets so widgets don't break
+      let missing = 0;
+      for (const wsId of widgetWsIds) {
+        if (wsId && !fetchedWsIds.has(wsId)) {
+          missing += 1;
+          addWorksheet({
+            id: wsId,
+            datasetId: "",
+            name: "Unavailable",
+            description: "Data source no longer available",
+            config: { metrics: [], dimensions: [], filters: [], chartType: "bar" },
+            status: "archived",
+            createdAt: "",
+            updatedAt: "",
+          });
+        }
+      }
+      setMissingCount(missing);
+
       for (const ws of worksheets) addWorksheet(ws);
 
       setDashboards([...allDashboards.filter((d) => d.id !== db.id), db]);
@@ -83,5 +113,17 @@ export default function DashboardPage() {
     );
   }
 
-  return <DashboardView dashboard={dashboard} />;
+  return (
+    <>
+      {missingCount > 0 && (
+        <div className="sticky top-0 z-10 bg-amber-50 border-b border-amber-200 px-4 py-2 text-xs text-amber-800 flex items-center gap-2">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+          <span>
+            {missingCount} widget{missingCount > 1 ? "s are" : " is"} unavailable — the{missingCount > 1 ? "ir" : ""} source worksheet{missingCount > 1 ? "s have" : " has"} been deleted.
+          </span>
+        </div>
+      )}
+      <DashboardView dashboard={dashboard} />
+    </>
+  );
 }

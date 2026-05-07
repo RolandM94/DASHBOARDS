@@ -152,7 +152,7 @@ export type WorkbookOrWorksheetConfig = WorksheetConfig | WorkbookConfig;
 
 // ─── Saved Worksheet ─────────────────────────────────────────────
 
-export type WorksheetStatus = "draft" | "saved";
+export type WorksheetStatus = "draft" | "saved" | "archived";
 
 export interface Worksheet {
   id: string;

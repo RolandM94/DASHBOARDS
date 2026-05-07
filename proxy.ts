@@ -34,8 +34,7 @@ export async function proxy(request: NextRequest) {
 
   // Routes that require authentication
   const isProtected =
-    pathname.startsWith("/home") ||
-    pathname.startsWith("/dashboard");
+    pathname.startsWith("/home");
 
   // Auth routes — redirect to /analytics if already signed in
   const isAuthRoute =

@@ -178,7 +178,14 @@ function ReadOnlyWidget({
 
   if (!worksheet) return (
     <div className="flex items-center justify-center h-full text-sm text-muted-foreground px-4">
-      Workbook not found
+      Data source not available
+    </div>
+  );
+
+  if (worksheet.status === "archived") return (
+    <div className="flex flex-col items-center justify-center h-full text-sm text-muted-foreground px-4 gap-1">
+      <span className="text-muted-foreground/50 text-xs font-medium uppercase tracking-wider">Widget Unavailable</span>
+      <span className="text-xs">The source worksheet for this widget has been deleted.</span>
     </div>
   );
 
