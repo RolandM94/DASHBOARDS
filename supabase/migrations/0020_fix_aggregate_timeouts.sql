@@ -1,17 +1,15 @@
 -- ─────────────────────────────────────────────────────────────────────────────
--- Migration 0020 — Fix aggregate query timeouts
+-- Migration 0020 — Fix aggregate query timeouts on large datasets
 -- 1. Increases statement_timeout in aggregate_dataset (120s instead of default 30s)
--- 2. Adds GIN index on dataset_rows.data for faster JSONB extraction
--- 3. Replaces expensive per-row regex check with simple ::numeric cast
---    (data is already validated at insert time)
--- 4. Adds statement_timeout to get_distinct_values
+-- 2. Adds GIN index on dataset_rows.data for faster JSONB operations
+-- 3. Increases statement_timeout in get_distinct_values
 -- IDEMPOTENT: safe to run multiple times.
 -- ─────────────────────────────────────────────────────────────────────────────
 
--- ── 1. Optimize aggregate: use try_cast approach instead of regex ──────────
--- The regex ~ operator runs on every single row for every metric and is the #1
--- cause of timeout on large datasets. Instead, use a nested safe cast that
--- returns null on error via a CASE + numeric test.
+-- ── 1. Increase statement_timeout in aggregate_dataset ────────────────────
+-- The default Supabase timeout (30s) is too low for large datasets where
+-- JSONB extraction + grouping needs more time. No behavioural change —
+-- identical logic, just a higher timeout.
 
 create or replace function aggregate_dataset(
   p_dataset_id              uuid,
@@ -41,6 +39,7 @@ declare
   v_first_met   text := '';
   v_first_dim   text := '';
   v_limit       text := '';
+  v_num_regex   text := '^-?[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?$';
   i             integer;
 begin
   v_where := array_append(v_where, format($q$dataset_id = %L$q$, p_dataset_id));
@@ -57,8 +56,8 @@ begin
     case upper(v_met->>'aggregation')
       when 'SUM' then
         v_sel := array_append(v_sel,
-          format($q$coalesce(sum(nullif(data->>%L, '')::numeric), 0) as %I$q$,
-            v_met->>'field', v_met->>'label'));
+          format($q$coalesce(sum(case when data->>%L ~ %L then (data->>%L)::numeric end), 0) as %I$q$,
+            v_met->>'field', v_num_regex, v_met->>'field', v_met->>'label'));
       when 'COUNT' then
         v_sel := array_append(v_sel,
           format($q$count(case when data->>%L is not null and data->>%L != '' then 1 end) as %I$q$,
@@ -66,25 +65,25 @@ begin
       when 'AVG' then
         if (v_met->>'fieldType') = 'integer' then
           v_sel := array_append(v_sel,
-            format($q$round(avg(nullif(data->>%L, '')::numeric), 0) as %I$q$,
-              v_met->>'field', v_met->>'label'));
+            format($q$round(avg(case when data->>%L ~ %L then (data->>%L)::numeric end), 0) as %I$q$,
+              v_met->>'field', v_num_regex, v_met->>'field', v_met->>'label'));
         else
           v_sel := array_append(v_sel,
-            format($q$avg(nullif(data->>%L, '')::numeric) as %I$q$,
-              v_met->>'field', v_met->>'label'));
+            format($q$avg(case when data->>%L ~ %L then (data->>%L)::numeric end) as %I$q$,
+              v_met->>'field', v_num_regex, v_met->>'field', v_met->>'label'));
         end if;
       when 'MIN' then
         v_sel := array_append(v_sel,
-          format($q$min(nullif(data->>%L, '')::numeric) as %I$q$,
-            v_met->>'field', v_met->>'label'));
+          format($q$min(case when data->>%L ~ %L then (data->>%L)::numeric end) as %I$q$,
+            v_met->>'field', v_num_regex, v_met->>'field', v_met->>'label'));
       when 'MAX' then
         v_sel := array_append(v_sel,
-          format($q$max(nullif(data->>%L, '')::numeric) as %I$q$,
-            v_met->>'field', v_met->>'label'));
+          format($q$max(case when data->>%L ~ %L then (data->>%L)::numeric end) as %I$q$,
+            v_met->>'field', v_num_regex, v_met->>'field', v_met->>'label'));
       else
         v_sel := array_append(v_sel,
-          format($q$coalesce(sum(nullif(data->>%L, '')::numeric), 0) as %I$q$,
-            v_met->>'field', v_met->>'label'));
+          format($q$coalesce(sum(case when data->>%L ~ %L then (data->>%L)::numeric end), 0) as %I$q$,
+            v_met->>'field', v_num_regex, v_met->>'field', v_met->>'label'));
     end case;
   end loop;
 
@@ -105,20 +104,20 @@ begin
           format($q$data->>%L ilike %L$q$, v_flt->>'field', '%' || (v_flt->>'value') || '%'));
       when 'gt' then
         v_where := array_append(v_where,
-          format($q$nullif(data->>%L, '')::numeric > nullif(%L, '')::numeric$q$,
-            v_flt->>'field', v_flt->>'value'));
+          format($q$(case when data->>%L ~ %L then (data->>%L)::numeric end) > (case when %L ~ %L then %L::numeric end)$q$,
+            v_flt->>'field', v_num_regex, v_flt->>'field', v_flt->>'value', v_num_regex, v_flt->>'value'));
       when 'gte' then
         v_where := array_append(v_where,
-          format($q$nullif(data->>%L, '')::numeric >= nullif(%L, '')::numeric$q$,
-            v_flt->>'field', v_flt->>'value'));
+          format($q$(case when data->>%L ~ %L then (data->>%L)::numeric end) >= (case when %L ~ %L then %L::numeric end)$q$,
+            v_flt->>'field', v_num_regex, v_flt->>'field', v_flt->>'value', v_num_regex, v_flt->>'value'));
       when 'lt' then
         v_where := array_append(v_where,
-          format($q$nullif(data->>%L, '')::numeric < nullif(%L, '')::numeric$q$,
-            v_flt->>'field', v_flt->>'value'));
+          format($q$(case when data->>%L ~ %L then (data->>%L)::numeric end) < (case when %L ~ %L then %L::numeric end)$q$,
+            v_flt->>'field', v_num_regex, v_flt->>'field', v_flt->>'value', v_num_regex, v_flt->>'value'));
       when 'lte' then
         v_where := array_append(v_where,
-          format($q$nullif(data->>%L, '')::numeric <= nullif(%L, '')::numeric$q$,
-            v_flt->>'field', v_flt->>'value'));
+          format($q$(case when data->>%L ~ %L then (data->>%L)::numeric end) <= (case when %L ~ %L then %L::numeric end)$q$,
+            v_flt->>'field', v_num_regex, v_flt->>'field', v_flt->>'value', v_num_regex, v_flt->>'value'));
       when 'in' then
         v_where := array_append(v_where,
           format($q$data->>%L = any(array(select jsonb_array_elements_text(%L::jsonb)))$q$,
@@ -209,27 +208,40 @@ $func$;
 grant execute on function aggregate_dataset(uuid, jsonb, jsonb, jsonb, jsonb, text[], text) to service_role;
 
 -- ── 2. GIN index on dataset_rows.data ─────────────────────────────────────
--- Speeds up all JSONB queries (data->>'field', data @> etc.)
 create index if not exists dataset_rows_data_gin_idx
   on dataset_rows using gin (data jsonb_path_ops);
 
--- ── 3. Optimize get_distinct_values with timeout ──────────────────────────
+-- ── 3. Increase statement_timeout in get_distinct_values ──────────────────
 create or replace function get_distinct_values(
   p_dataset_ids uuid[],
   p_field       text,
   p_limit       integer default 500
 )
-returns text[]
-language sql
+returns jsonb
+language plpgsql
+set search_path = public
 set statement_timeout = '120s'
 as $func$
-  select array_agg(distinct v)
-  from dataset_rows,
-  lateral (select data->>p_field as v) t
-  where dataset_id = any(p_dataset_ids)
-    and v is not null
-    and v != ''
-  limit p_limit;
+declare
+  v_result jsonb;
+begin
+  execute format(
+    $q$
+    select coalesce(jsonb_agg(v order by v), '[]'::jsonb)
+    from (
+      select distinct data->>%L as v
+      from dataset_rows
+      where dataset_id = any(%L::uuid[])
+        and data->>%L is not null
+        and data->>%L != ''
+      limit %s
+    ) t
+    $q$,
+    p_field, p_dataset_ids, p_field, p_field, p_limit
+  ) into v_result;
+
+  return coalesce(v_result, '[]'::jsonb);
+end;
 $func$;
 
 grant execute on function get_distinct_values(uuid[], text, integer) to service_role;
