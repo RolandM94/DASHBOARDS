@@ -1,6 +1,6 @@
 import {
-  esc, parseChart, parseTable, tableValue, CHART_COLORS, shortLabel,
-  kpiValue, yAxisTicks, richTextToHtml,
+  esc, nv, parseChart, parseTable, tableValue, CHART_COLORS, shortLabel,
+  axisValue, kpiValue, yAxisTicks, richTextToHtml,
 } from "./chartRenderer";
 
 type R = Record<string, unknown>;
@@ -273,8 +273,61 @@ function svgPie(figure: R, w: number, h: number): string {
 
 export function renderDashboardPdfHtml(input: DashboardPdfInput): string {
   const { header, blocks, activeFilters } = input;
-  const pages = splitPages(blocks);
   const filterSummary = renderFilterSummary(activeFilters);
+  const pages = splitPages(blocks);
+
+  if (pages.length === 0) {
+    return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>${esc(header.title)}</title>
+<style>
+  @page { size: A4 landscape; margin: 16mm 10mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 12px;
+    color: #1f2937;
+    line-height: 1.5;
+    margin: 0;
+    padding: 0;
+  }
+  .header {
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #e5e7eb;
+  }
+  .dash-title {
+    font-size: 20px;
+    font-weight: 700;
+    margin: 0 0 4px 0;
+    color: #111827;
+  }
+  .dash-meta {
+    font-size: 10px;
+    color: #6b7280;
+  }
+  .empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: #9ca3af;
+    font-size: 14px;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="header">
+    <h1 class="dash-title">${esc(header.title)}</h1>
+    <div class="dash-meta">${esc(header.permissionLabel)} · Published ${esc(header.publishedDate)} · Generated ${esc(header.generatedDate)}</div>
+    ${filterSummary}
+  </div>
+  <div class="empty-state">This dashboard has no content blocks.</div>
+</div>
+</body>
+</html>`;
+  }
 
   const pageContainers = pages.map((page, pageIdx) => {
     const rows = Math.max(1, Math.max(...page.blocks.map((b) => b.y + b.h - page.top)));

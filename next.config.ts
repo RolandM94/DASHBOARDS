@@ -11,6 +11,7 @@ const nextConfig: NextConfig = {
   allowedDevOrigins: extraOrigins,
   serverExternalPackages: ["playwright", "playwright-core", "@sparticuz/chromium"],
   outputFileTracingIncludes: {
+    "/api/dashboards/**/*": ["./node_modules/@sparticuz/chromium/bin/**/*"],
     "/api/reports/**/*": ["./node_modules/@sparticuz/chromium/bin/**/*"],
     "/api/reports/*": ["./node_modules/@sparticuz/chromium/bin/**/*"],
   },
