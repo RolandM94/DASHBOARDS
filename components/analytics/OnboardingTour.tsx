@@ -16,7 +16,7 @@ const STEPS: Step[] = [
     target: '[data-tour-id="sidebar-nav"]',
     title: "Welcome to Supercoolstuff",
     content:
-      "This is your analytics command centre. The sidebar lets you navigate between Analytics, Workbooks, Canvases, and Reports.",
+      "This is your analytics command centre. The sidebar lets you navigate between Home, Workbooks, Canvases, and Reports.",
     placement: "right",
   },
   {

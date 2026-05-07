@@ -279,9 +279,9 @@ export default function AnalyticsLayout({ children }: { children: React.ReactNod
           </div>
 
           <nav className={cn("flex-1 space-y-0.5 overflow-hidden", collapsed ? "p-2" : "p-3")} data-tour-id="sidebar-nav">
-            <NavLink href="/analytics" label="Analytics" collapsed={collapsed}>
+            <NavLink href="/analytics" label="Home" collapsed={collapsed}>
               <BarChart2 className="h-4 w-4 shrink-0" />
-              {!collapsed && <span>Analytics</span>}
+              {!collapsed && <span>Home</span>}
             </NavLink>
             <NavLink href="/analytics/workbook/new" label="New Workbook" collapsed={collapsed}>
               <Plus className="h-4 w-4 shrink-0" />
