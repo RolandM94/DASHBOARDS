@@ -605,6 +605,7 @@ export function DashboardView({ dashboard }: Props) {
   const [copied, setCopied] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [user, setUser] = useState<unknown>(null);
+  const [exportingPdf, setExportingPdf] = useState(false);
   const router = useRouter();
   const { saved, loading: saveLoading, toggle } = useSavedDashboard(dashboard.id);
 
@@ -712,7 +713,22 @@ export function DashboardView({ dashboard }: Props) {
   }
 
   function exportPDF() {
-    window.print();
+    setExportingPdf(true);
+    const params = new URLSearchParams();
+    const encoded = encodeFiltersParam(activeFilters);
+    if (encoded) params.set("filters", encoded);
+    if (activeSmartFilters.length > 0) {
+      params.set("smartFilters", JSON.stringify(activeSmartFilters));
+    }
+    const qs = params.toString();
+    const url = `/api/dashboards/${dashboard.id}/pdf${qs ? `?${qs}` : ""}`;
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${dashboard.title}.pdf`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    setTimeout(() => setExportingPdf(false), 2000);
   }
 
   const PermIcon = permissionIcon[dashboard.permission];
@@ -790,9 +806,9 @@ export function DashboardView({ dashboard }: Props) {
               <Bookmark className={`h-3.5 w-3.5 ${saved ? "fill-current" : ""}`} />
               <span className="hidden sm:inline">{saved ? "Saved" : "Save"}</span>
             </Button>
-            <Button variant="outline" size="sm" onClick={exportPDF} className="gap-1.5 text-xs h-8 px-2.5 sm:px-3">
-              <FileDown className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Export PDF</span>
+            <Button variant="outline" size="sm" onClick={exportPDF} disabled={exportingPdf} className="gap-1.5 text-xs h-8 px-2.5 sm:px-3">
+              {exportingPdf ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileDown className="h-3.5 w-3.5" />}
+              <span className="hidden sm:inline">{exportingPdf ? "Exporting…" : "Export PDF"}</span>
             </Button>
             <Link href={`/home/reports?sourceType=dashboard&sourceId=${dashboard.id}`}>
               <Button variant="outline" size="sm" className="gap-1.5 text-xs h-8 px-2.5 sm:px-3">

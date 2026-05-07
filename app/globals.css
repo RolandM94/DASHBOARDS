@@ -243,48 +243,14 @@
   }
 }
 
-/* ── Print styles (dashboard PDF export) ────────────────────────────── */
+/* ── Print styles (fallback for browser-native print) ─────────────────── */
 @media print {
-  /* Remove browser chrome, page margins tight */
   @page {
     margin: 12mm 10mm;
   }
 
-  /* Whole page background must be white */
   html, body {
     background: white !important;
     color: black !important;
-  }
-
-  /* Grid layout: allow blocks to break across pages */
-  .react-grid-layout {
-    position: relative !important;
-    height: auto !important;
-    overflow: visible !important;
-  }
-
-  .react-grid-item {
-    position: relative !important;
-    transform: none !important;
-    left: auto !important;
-    top: auto !important;
-    width: 100% !important;
-    height: auto !important;
-    min-height: 280px;
-    display: block;
-    margin-bottom: 12mm;
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
-
-  /* Cards: remove box-shadows for cleaner PDF */
-  [style*="box-shadow"] {
-    box-shadow: none !important;
-    border: 1px solid #e5e7eb !important;
-  }
-
-  /* Charts: let SVGs fill available width */
-  svg.recharts-surface {
-    width: 100% !important;
   }
 }
