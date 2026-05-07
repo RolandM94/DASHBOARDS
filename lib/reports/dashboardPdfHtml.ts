@@ -1,6 +1,6 @@
 import {
-  esc, nv, parseChart, parseTable, tableValue, CHART_COLORS, shortLabel,
-  axisValue, kpiValue, yAxisTicks, richTextToHtml,
+  esc, parseChart, parseTable, tableValue, CHART_COLORS, shortLabel,
+  kpiValue, yAxisTicks, richTextToHtml,
 } from "./chartRenderer";
 
 type R = Record<string, unknown>;

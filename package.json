@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev -H 0.0.0.0",
     "install:browsers": "[ -n \"$VERCEL\" ] && echo 'Skipping Playwright browser install on Vercel (using @sparticuz/chromium)' || npx playwright install chromium",
-    "build": "npm run install:browsers && next build",
+    "build": "next build",
     "test": "npx tsx --test tests/*.test.ts tests/*.test.mjs",
     "start": "next start",
     "lint": "eslint",
