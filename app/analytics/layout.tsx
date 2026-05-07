@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   BarChart2, Building2, LayoutDashboard, LogOut, Plus,
-  Loader2, AlertCircle, FileText,
+  Loader2, AlertCircle, FileText, PanelLeftClose, PanelLeftOpen,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { DataLoader } from "@/components/providers/DataLoader";
@@ -19,14 +19,16 @@ import { Label } from "@/components/ui/label";
 
 // ── Nav link ──────────────────────────────────────────────────────
 
-function NavLink({ href, children }: { href: string; children: React.ReactNode }) {
+function NavLink({ href, label, collapsed, children }: { href: string; label?: string; collapsed?: boolean; children: React.ReactNode }) {
   const pathname = usePathname();
   const active = pathname === href || pathname.startsWith(href + "/");
   return (
     <Link
       href={href}
+      title={collapsed ? (label ?? "Link") : undefined}
       className={cn(
-        "flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors",
+        "flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors shrink-0",
+        collapsed ? "justify-center w-8 h-8 mx-auto px-0" : "",
         active
           ? "bg-brand-tint-100 text-brand-deep font-medium"
           : "hover:bg-muted text-muted-foreground hover:text-foreground"
@@ -155,6 +157,18 @@ export default function AnalyticsLayout({ children }: { children: React.ReactNod
   const [userEmail, setUserEmail]   = useState<string>("");
   const { hasSeenTour, startTour }  = useTourStore();
   const autoStartedRef              = useRef(false);
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return typeof window !== "undefined" && localStorage.getItem("sidebar-collapsed") === "true"; }
+    catch { return false; }
+  });
+
+  function toggleSidebar() {
+    setCollapsed((prev) => {
+      const next = !prev;
+      try { localStorage.setItem("sidebar-collapsed", String(next)); } catch {}
+      return next;
+    });
+  }
 
   useEffect(() => {
     const supabase = createClient();
@@ -233,53 +247,76 @@ export default function AnalyticsLayout({ children }: { children: React.ReactNod
       <OnboardingTour />
       <div className="flex h-full min-w-0 overflow-hidden">
         {/* Sidebar */}
-        <aside className="w-56 shrink-0 border-r bg-white flex flex-col">
-          <div className="px-4 py-5 border-b">
-            <div className="flex items-center gap-2">
-              <div className="h-7 w-7 bg-brand rounded-lg flex items-center justify-center">
+        <aside className={cn(
+          "shrink-0 border-r bg-white flex flex-col transition-all duration-300",
+          collapsed ? "w-14" : "w-56"
+        )}>
+          <div className={cn("border-b flex items-center gap-2 shrink-0",
+            collapsed ? "justify-center py-3" : "px-4 py-5"
+          )}>
+            {!collapsed ? (
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <div className="h-7 w-7 bg-brand rounded-lg flex items-center justify-center shrink-0">
+                  <BarChart2 className="h-4 w-4 text-white" />
+                </div>
+                <span className="font-bold text-sm">Supercoolstuff</span>
+              </div>
+            ) : (
+              <div className="h-7 w-7 bg-brand rounded-lg flex items-center justify-center shrink-0">
                 <BarChart2 className="h-4 w-4 text-white" />
               </div>
-              <span className="font-bold text-sm">Supercoolstuff</span>
-            </div>
+            )}
+            <button
+              onClick={toggleSidebar}
+              className="p-1 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors shrink-0"
+              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            >
+              {collapsed
+                ? <PanelLeftOpen className="h-4 w-4" />
+                : <PanelLeftClose className="h-4 w-4" />
+              }
+            </button>
           </div>
 
-          <nav className="flex-1 p-3 space-y-0.5" data-tour-id="sidebar-nav">
-            <NavLink href="/analytics">
-              <BarChart2 className="h-4 w-4" />
-              Analytics
+          <nav className={cn("flex-1 space-y-0.5 overflow-hidden", collapsed ? "p-2" : "p-3")} data-tour-id="sidebar-nav">
+            <NavLink href="/analytics" label="Analytics" collapsed={collapsed}>
+              <BarChart2 className="h-4 w-4 shrink-0" />
+              {!collapsed && <span>Analytics</span>}
             </NavLink>
-            <NavLink href="/analytics/workbook/new">
-              <Plus className="h-4 w-4" />
-              New Workbook
+            <NavLink href="/analytics/workbook/new" label="New Workbook" collapsed={collapsed}>
+              <Plus className="h-4 w-4 shrink-0" />
+              {!collapsed && <span>New Workbook</span>}
             </NavLink>
-            <NavLink href="/analytics/canvas/new">
-              <LayoutDashboard className="h-4 w-4" />
-              New Canvas
+            <NavLink href="/analytics/canvas/new" label="New Canvas" collapsed={collapsed}>
+              <LayoutDashboard className="h-4 w-4 shrink-0" />
+              {!collapsed && <span>New Canvas</span>}
             </NavLink>
-            <NavLink href="/analytics/reports">
-              <FileText className="h-4 w-4" />
-              Reports
+            <NavLink href="/analytics/reports" label="Reports" collapsed={collapsed}>
+              <FileText className="h-4 w-4 shrink-0" />
+              {!collapsed && <span>Reports</span>}
             </NavLink>
 
             {/* Owners only — members don't manage org settings */}
             {userType === "owner" && (
               <>
-                <div className="pt-2 pb-0.5">
-                  <p className="px-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60 mb-1">
-                    Settings
-                  </p>
-                </div>
-                <NavLink href="/analytics/settings/org">
-                  <Building2 className="h-4 w-4" />
-                  Stakeholder Management
+                {!collapsed && (
+                  <div className="pt-2 pb-0.5">
+                    <p className="px-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60 mb-1">
+                      Settings
+                    </p>
+                  </div>
+                )}
+                <NavLink href="/analytics/settings/org" label="Settings" collapsed={collapsed}>
+                  <Building2 className="h-4 w-4 shrink-0" />
+                  {!collapsed && <span>Stakeholder Management</span>}
                 </NavLink>
               </>
             )}
           </nav>
 
-          <div className="px-3 py-3 border-t space-y-2">
+          <div className={cn("border-t space-y-2", collapsed ? "px-1 py-2" : "px-3 py-3")}>
             {/* User identity */}
-            {userName && (
+            {userName && !collapsed && (
               <div className="flex items-center gap-2.5 px-3 py-2">
                 <div className="h-7 w-7 rounded-full bg-brand/10 flex items-center justify-center shrink-0">
                   <span className="text-[10px] font-semibold text-brand">{getInitials(userName)}</span>
@@ -290,13 +327,26 @@ export default function AnalyticsLayout({ children }: { children: React.ReactNod
                 </div>
               </div>
             )}
-            <TourLauncher />
+            {userName && collapsed && (
+              <div className="flex justify-center">
+                <div className="h-7 w-7 rounded-full bg-brand/10 flex items-center justify-center shrink-0" title={userName}>
+                  <span className="text-[10px] font-semibold text-brand">{getInitials(userName)}</span>
+                </div>
+              </div>
+            )}
+            <TourLauncher collapsed={collapsed} />
             <button
               onClick={handleSignOut}
-              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              className={cn(
+                "flex items-center rounded-lg text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors",
+                collapsed
+                  ? "justify-center w-8 h-8 mx-auto p-0"
+                  : "w-full gap-2.5 px-3 py-2"
+              )}
+              title={collapsed ? "Sign out" : undefined}
             >
-              <LogOut className="h-4 w-4" />
-              Sign out
+              <LogOut className="h-4 w-4 shrink-0" />
+              {!collapsed && <span>Sign out</span>}
             </button>
           </div>
         </aside>
