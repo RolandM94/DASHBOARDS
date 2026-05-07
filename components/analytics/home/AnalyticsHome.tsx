@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useWorksheetStore } from "@/store/worksheetStore";
 import { useCanvasStore } from "@/store/canvasStore";
 import { WorksheetCard } from "./WorksheetCard";
@@ -11,11 +11,11 @@ import { Button } from "@/components/ui/button";
 import { Badge }  from "@/components/ui/badge";
 import {
   BarChart2, LayoutDashboard, Plus, Database, Share2,
-  Globe, Users, Lock, Leaf, Trash2, FileText,
+  Globe, Users, Lock, Leaf, Trash2, FileText, Bookmark,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type { Dataset, DatasetVisibility } from "@/types";
+import type { Dataset, DatasetVisibility, PublishedDashboard, DashboardPermission } from "@/types";
 
 // ── Skeleton card shown while the store is hydrating ──────────────
 function CardSkeleton() {
@@ -266,6 +266,54 @@ function ShowMore({
   );
 }
 
+// ── Saved Dashboard card ──────────────────────────────────────────
+
+const permissionIcon: Record<DashboardPermission, React.ElementType> = {
+  private: Lock,
+  org: Users,
+  public: Globe,
+};
+
+const permissionLabel: Record<DashboardPermission, string> = {
+  private: "Private",
+  org: "Organisation",
+  public: "Public",
+};
+
+function SavedDashboardCard({ dashboard }: { dashboard: PublishedDashboard & { savedAt?: string } }) {
+  const PermIcon = permissionIcon[dashboard.permission];
+  return (
+    <Link
+      href={`/dashboard/${dashboard.id}`}
+      className="rounded-xl border bg-white overflow-hidden group transition-all hover:-translate-y-0.5 hover:shadow-md block"
+      style={{ boxShadow: "0px 0px 1px 0px rgba(0,0,0,.15), 0px 1px 4px 0px rgba(0,0,0,.04)" }}
+    >
+      <div className="h-1 w-full bg-gradient-to-r from-amber-300 to-orange-400" />
+      <div className="p-4 space-y-3">
+        <div className="h-8 w-8 rounded-lg bg-amber-50 flex items-center justify-center">
+          <LayoutDashboard className="h-4 w-4 text-amber-600" />
+        </div>
+        <div>
+          <p className="text-sm font-semibold leading-tight line-clamp-2">{dashboard.title}</p>
+          <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+            <PermIcon className="h-3 w-3" />
+            {permissionLabel[dashboard.permission]}
+          </p>
+        </div>
+        <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+          <span>Published {new Date(dashboard.publishedAt).toLocaleDateString()}</span>
+          {dashboard.savedAt && (
+            <>
+              <span>·</span>
+              <span>Saved {new Date(dashboard.savedAt).toLocaleDateString()}</span>
+            </>
+          )}
+        </div>
+      </div>
+    </Link>
+  );
+}
+
 // ── Main ──────────────────────────────────────────────────────────
 export function AnalyticsHome() {
   const router         = useRouter();
@@ -278,6 +326,18 @@ export function AnalyticsHome() {
 
   const [shareTarget,   setShareTarget]   = useState<Dataset | null>(null);
   const [hasOrg,        setHasOrg]        = useState(false);
+  const [savedDashboards, setSavedDashboards] = useState<(PublishedDashboard & { savedAt?: string })[]>([]);
+  const [savedLoading,  setSavedLoading]  = useState(true);
+
+  useEffect(() => {
+    fetch("/api/dashboards/saved")
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (data?.dashboards) setSavedDashboards(data.dashboards);
+        setSavedLoading(false);
+      })
+      .catch(() => setSavedLoading(false));
+  }, []);
 
   // Per-section expand state
   const [wsExpanded,    setWsExpanded]    = useState(false);
@@ -484,6 +544,24 @@ export function AnalyticsHome() {
               ))}
             </div>
             <ShowMore total={sharedWithMe.length} expanded={sharedExpanded} onToggle={() => setSharedExpanded((v) => !v)} />
+          </section>
+        )}
+
+        {/* Saved Dashboards */}
+        {!savedLoading && savedDashboards.length > 0 && (
+          <section>
+            <div className="flex items-center gap-2 mb-4">
+              <Bookmark className="h-4.5 w-4.5 text-amber-600" />
+              <h2 className="font-semibold text-base">Saved Dashboards</h2>
+              <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full ml-0.5">
+                {savedDashboards.length}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+              {savedDashboards.map((d) => (
+                <SavedDashboardCard key={d.id} dashboard={d} />
+              ))}
+            </div>
           </section>
         )}
 

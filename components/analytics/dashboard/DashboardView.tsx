@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useLayoutEffect, useEffect, useMemo } from "react";
+import { useState, useRef, useLayoutEffect, useEffect, useMemo, useCallback } from "react";
 import {
   ActiveGlobalFilters, CanvasBlock, FilterBlockConfig,
   GlobalFilterValue, GridLayoutItem, PublishedDashboard,
@@ -13,10 +13,13 @@ import { getCanvasFields, getFieldWidgetCounts, splitFiltersForApi, encodeFilter
 import { getWorkbookSheet } from "@/lib/workbook";
 import { ChartRenderer } from "@/components/shared/charts/ChartRenderer";
 import { Button } from "@/components/ui/button";
-import { Globe, Lock, Building2, Link2, Check, BarChart2, Loader2, Info, RefreshCw, X, FileDown, Sheet, Sparkles, FileText } from "lucide-react";
+import { Globe, Lock, Building2, Link2, Check, BarChart2, Loader2, Info, RefreshCw, X, FileDown, Sheet, Sparkles, FileText, ArrowLeft, Bookmark } from "lucide-react";
 import { exportAsXLSX } from "@/lib/utils/export";
 import { ReactGridLayout, WidthProvider } from "react-grid-layout/legacy";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
+import { useSavedDashboard } from "@/hooks/useSavedDashboard";
 
 const GridLayout = WidthProvider(ReactGridLayout);
 const ROW_HEIGHT = 30;
@@ -601,6 +604,24 @@ export function DashboardView({ dashboard }: Props) {
   const [activeSmartFilters, setActiveSmartFilters] = useState<ActiveSmartFilters>([]);
   const [copied, setCopied] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [user, setUser] = useState<unknown>(null);
+  const router = useRouter();
+  const { saved, loading: saveLoading, toggle } = useSavedDashboard(dashboard.id);
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+    });
+  }, []);
+
+  function handleSave() {
+    if (!user) {
+      router.push(`/login?redirect=/dashboard/${dashboard.id}`);
+    } else {
+      toggle();
+    }
+  }
 
   // ── Restore filters from URL on first mount ───────────────────────
   useEffect(() => {
@@ -706,8 +727,16 @@ export function DashboardView({ dashboard }: Props) {
         {/* Header row */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-3 min-w-0">
 
-          {/* Left: logo + title */}
+          {/* Left: breadcrumb + logo + title */}
           <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <Link
+              href="/home"
+              className="text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors hidden sm:flex items-center gap-1 shrink-0"
+            >
+              <ArrowLeft className="h-3 w-3" />
+              Home
+            </Link>
+            <span className="text-muted-foreground/20 text-xs hidden sm:inline">·</span>
             <div className="h-8 w-8 bg-brand rounded-lg flex items-center justify-center shrink-0">
               <BarChart2 className="h-4 w-4 text-white" />
             </div>
@@ -743,6 +772,24 @@ export function DashboardView({ dashboard }: Props) {
                 Clear filters
               </Button>
             )}
+            {!user && (
+              <>
+                <Link href={`/login?redirect=/dashboard/${dashboard.id}`}>
+                  <Button variant="ghost" size="sm" className="gap-1.5 text-xs h-8 px-2.5 sm:px-3">
+                    Sign in
+                  </Button>
+                </Link>
+                <Link href={`/signup?redirect=/dashboard/${dashboard.id}`}>
+                  <Button variant="outline" size="sm" className="gap-1.5 text-xs h-8 px-2.5 sm:px-3">
+                    Sign up
+                  </Button>
+                </Link>
+              </>
+            )}
+            <Button variant="outline" size="sm" onClick={handleSave} disabled={saveLoading} className="gap-1.5 text-xs h-8 px-2.5 sm:px-3">
+              <Bookmark className={`h-3.5 w-3.5 ${saved ? "fill-current" : ""}`} />
+              <span className="hidden sm:inline">{saved ? "Saved" : "Save"}</span>
+            </Button>
             <Button variant="outline" size="sm" onClick={exportPDF} className="gap-1.5 text-xs h-8 px-2.5 sm:px-3">
               <FileDown className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Export PDF</span>
