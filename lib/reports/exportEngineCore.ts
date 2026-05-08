@@ -15,8 +15,6 @@ import {
   TextRun,
   WidthType,
 } from "docx";
-import sparticuzChromium from "@sparticuz/chromium";
-import { chromium } from "playwright-core";
 import {
   esc,
   nv,
@@ -40,6 +38,7 @@ import {
   plainTextFromRichText,
   shortLabel,
 } from "@/lib/reports/chartRenderer";
+import { renderPdfFromHtml } from "@/lib/reports/pdfRenderer";
 import type { ReportExportFormat } from "@/types";
 
 export type JsonObject = Record<string, unknown>;
@@ -745,31 +744,17 @@ export async function renderReportDocx(payload: JsonObject, options: ReportExpor
 }
 
 export async function renderReportPdf(payload: JsonObject, options: ReportExportOptions = {}): Promise<Uint8Array> {
-  const isLinux = process.platform === "linux";
-  const launchOptions = isLinux
-    ? {
-        args: sparticuzChromium.args,
-        executablePath: await sparticuzChromium.executablePath(),
-        headless: sparticuzChromium.headless,
-      }
-    : { headless: true as const };
-
-  const browser = await chromium.launch(launchOptions);
-  try {
-    const page = await browser.newPage();
-    await page.setContent(renderReportHtml(payload, options), { waitUntil: "networkidle" });
-    const pdf = await page.pdf({
+  return renderPdfFromHtml(renderReportHtml(payload, options), {
+    waitUntil: "load",
+    pdf: {
       format: "A4",
       printBackground: true,
       displayHeaderFooter: true,
       margin: { top: "22mm", right: "18mm", bottom: "22mm", left: "18mm" },
       footerTemplate: `<div style="font-family: 'Times New Roman', Times, serif; font-size: 8px; color: #6b7280; width: 100%; padding: 0 18mm; text-align: right;"><span class="pageNumber"></span> / <span class="totalPages"></span></div>`,
       headerTemplate: `<div></div>`,
-    });
-    return new Uint8Array(pdf);
-  } finally {
-    await browser.close();
-  }
+    },
+  });
 }
 
 export function renderReportHtmlArtifact(payload: JsonObject, options: ReportExportOptions = {}): Uint8Array {

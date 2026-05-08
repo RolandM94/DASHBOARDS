@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { after } from "node:test";
 import {
   artifactMetadata,
   renderReportDocx,
@@ -9,7 +9,12 @@ import {
   renderReportText,
   sanitizeFilename,
 } from "../lib/reports/exportEngineCore.ts";
+import { closeSharedPdfBrowserForTests } from "../lib/reports/pdfRenderer.ts";
 import { renderPreviewHtml } from "../lib/reports/previewRenderer.ts";
+
+after(async () => {
+  await closeSharedPdfBrowserForTests();
+});
 
 const payload = {
   title: "Quarterly Sales Performance Report",

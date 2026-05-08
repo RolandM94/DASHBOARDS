@@ -1,26 +1,25 @@
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { loadDashboardScope, type DashboardWorksheetRow } from "@/lib/auth/dashboardScope";
-import { aggregateDataset } from "@/lib/data/aggregateDataset";
 import { splitFiltersForApi, decodeFiltersParam, hasActiveFilterValue } from "@/lib/data/filters";
 import { getWorkbookSheet } from "@/lib/workbook";
 import { renderDashboardPdfHtml } from "@/lib/reports/dashboardPdfHtml";
-import { topNWithOthers } from "@/lib/reports/topNOthers";
+import {
+  aggregateDashboardPdfWidgets,
+  fetchDashboardDatasetFields,
+  fetchDashboardPdfPreviewRows,
+} from "@/lib/reports/dashboardPdfData";
+import { renderPdfFromHtml } from "@/lib/reports/pdfRenderer";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import type {
   WidgetBlockConfig,
   Filter,
-  Metric,
-  Dimension,
-  ResolvedChartData,
   GridLayoutItem,
   Worksheet,
   WorksheetStatus,
   ActiveSmartFilters,
   DatasetPreviewBlockConfig,
 } from "@/types";
-import sparticuzChromium from "@sparticuz/chromium";
-import { chromium } from "playwright-core";
 
 function toWorksheet(row: DashboardWorksheetRow): Worksheet {
   return {
@@ -81,11 +80,24 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
+  const timings: Record<string, number> = {};
+  const time = async <T>(name: string, fn: () => Promise<T>): Promise<T> => {
+    const started = performance.now();
+    try {
+      return await fn();
+    } finally {
+      timings[name] = Math.round(performance.now() - started);
+    }
+  };
+  const logTimings = (status: "success" | "error") => {
+    console.info("[dashboard-pdf] export timings", { dashboardId: id, status, timings });
+  };
+
   const supabase = await createClient();
   const serviceClient = await createServiceClient();
 
   // 1. Load dashboard scope (permission-aware)
-  const { scope, error, status } = await loadDashboardScope(supabase, serviceClient, id);
+  const { scope, error, status } = await time("scopeLoad", () => loadDashboardScope(supabase, serviceClient, id));
   if (!scope) return NextResponse.json({ error }, { status });
 
   const dashboard = scope.dashboard;
@@ -127,81 +139,26 @@ export async function GET(
     (b): b is WidgetBlockConfig => b.type === "widget",
   );
 
-  const aggregateResults = await Promise.all(
-    widgetBlocks.map(async (block) => {
-      try {
-        const worksheetRow = scope.worksheets.find((w) => w.id === block.worksheetId);
-        if (!worksheetRow) return { blockId: block.id, data: null as ResolvedChartData | null };
-
-        const worksheet = toWorksheet(worksheetRow);
-        const sheet = getWorkbookSheet(worksheet, block.sheetId);
-        if (!sheet) return { blockId: block.id, data: null as ResolvedChartData | null };
-
-        const combinedFilters: Filter[] = [...(sheet.filters ?? []), ...extraFilters, ...smartFilters];
-
-        const data = await aggregateDataset(serviceClient, {
-          datasetId: worksheet.datasetId,
-          metrics: sheet.metrics as Metric[],
-          dimensions: sheet.dimensions as Dimension[],
-          worksheetFilters: combinedFilters,
-          globalFilters: cleanGlobalFilters,
-          sort: sheet.sort ?? "natural",
-        });
-
-        return { blockId: block.id, data };
-      } catch {
-        return { blockId: block.id, data: null as ResolvedChartData | null };
-      }
-    }),
+  const datasetFieldsById = await time("datasetFieldsLoad", () =>
+    fetchDashboardDatasetFields(serviceClient, scope.datasetIds)
   );
-
-  // 5. Apply top-10 + others for widgets with >10 data points
-  const TOP_N = 10;
-  for (const result of aggregateResults) {
-    if (!result.data || result.data.data.length <= TOP_N) continue;
-
-    const block = widgetBlocks.find((b) => b.id === result.blockId);
-    if (!block) continue;
-
-    const worksheetRow = scope.worksheets.find((w) => w.id === block.worksheetId);
-    if (!worksheetRow) continue;
-
-    const worksheet = toWorksheet(worksheetRow);
-    const sheet = getWorkbookSheet(worksheet, block.sheetId);
-    if (!sheet || sheet.metrics.length === 0 || sheet.dimensions.length === 0) continue;
-
-    const primaryMetric = sheet.metrics[0].label;
-    const primaryDim = sheet.dimensions[0].label;
-
-    const trimmed = topNWithOthers(result.data.data, primaryMetric, primaryDim, TOP_N);
-    result.data = { ...result.data, data: trimmed as ResolvedChartData["data"] };
-  }
+  const aggregateResults = await time("aggregateData", () =>
+    aggregateDashboardPdfWidgets({
+      serviceClient,
+      widgetBlocks,
+      worksheets: scope.worksheets,
+      extraFilters,
+      smartFilters,
+      cleanGlobalFilters,
+      datasetFieldsById,
+    })
+  );
 
   // 6. Fetch dataset preview rows for preview blocks.
   const previewBlocks = dashboard.blocks.filter(
     (block): block is DatasetPreviewBlockConfig => block.type === "preview",
   );
-  const previewResults = await Promise.all(
-    previewBlocks.map(async (block) => {
-      try {
-        const limit = Math.min(block.rowLimit ?? 10, 1000);
-        const { data, error: rowsError } = await serviceClient
-          .from("dataset_rows")
-          .select("data")
-          .eq("dataset_id", block.datasetId)
-          .order("row_index", { ascending: true })
-          .limit(limit);
-
-        if (rowsError) return { blockId: block.id, rows: [] as Record<string, unknown>[] };
-        return {
-          blockId: block.id,
-          rows: (data ?? []).map((row) => row.data as Record<string, unknown>),
-        };
-      } catch {
-        return { blockId: block.id, rows: [] as Record<string, unknown>[] };
-      }
-    }),
-  );
+  const previewResults = await time("previewRows", () => fetchDashboardPdfPreviewRows(serviceClient, previewBlocks));
 
   // 7. Build blocks for the PDF HTML renderer
   const layout = (scope.dashboard.layout as GridLayoutItem[] | undefined) ?? [];
@@ -287,7 +244,7 @@ export async function GET(
     }>;
 
   // 8. Generate PDF HTML
-  const html = renderDashboardPdfHtml({
+  const html = await time("htmlRender", async () => renderDashboardPdfHtml({
     header: {
       title: dashboard.title,
       permissionLabel: permissionLabel[dashboard.permission] ?? "Private",
@@ -296,24 +253,16 @@ export async function GET(
     },
     blocks,
     activeFilters: filterSummary,
-  });
+  }));
 
   // 9. Render PDF with Playwright/Chromium
   try {
-    const isLinux = process.platform === "linux";
-    const launchOptions = isLinux
-      ? {
-          args: sparticuzChromium.args,
-          executablePath: await sparticuzChromium.executablePath(),
-          headless: sparticuzChromium.headless,
-        }
-      : { headless: true as const };
-
-    const browser = await chromium.launch(launchOptions);
-    try {
-      const page = await browser.newPage();
-      await page.setContent(html, { waitUntil: "networkidle" });
-      const pdf = await page.pdf({
+    const pdf = await renderPdfFromHtml(html, {
+      waitUntil: "load",
+      onTiming: (stage, ms) => {
+        timings[stage] = Math.round(ms);
+      },
+      pdf: {
         format: "A4",
         landscape: true,
         printBackground: true,
@@ -321,18 +270,19 @@ export async function GET(
         margin: { top: "16mm", right: "10mm", bottom: "16mm", left: "10mm" },
         headerTemplate: `<div style="font-size:8px;color:#6b7280;padding:0 10mm;width:100%;text-align:left;">${dashboard.title}</div>`,
         footerTemplate: `<div style="font-size:8px;color:#6b7280;padding:0 10mm;width:100%;text-align:right;">Page <span class="pageNumber"></span> of <span class="totalPages"></span></div>`,
-      });
+      },
+    });
 
-      return new NextResponse(new Uint8Array(pdf), {
-        headers: {
-          "Content-Type": "application/pdf",
-          "Content-Disposition": `attachment; filename="${sanitizeFilename(dashboard.title)}.pdf"`,
-        },
-      });
-    } finally {
-      await browser.close();
-    }
+    logTimings("success");
+    const body = pdf.buffer.slice(pdf.byteOffset, pdf.byteOffset + pdf.byteLength) as ArrayBuffer;
+    return new NextResponse(body, {
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename="${sanitizeFilename(dashboard.title)}.pdf"`,
+      },
+    });
   } catch (err) {
+    logTimings("error");
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "PDF generation failed" },
       { status: 500 },

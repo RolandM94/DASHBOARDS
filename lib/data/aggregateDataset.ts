@@ -16,6 +16,7 @@ type ServiceClient = Awaited<ReturnType<typeof createServiceClient>>;
 
 export interface AggregateDatasetInput {
   datasetId: string;
+  datasetFields?: DatasetField[];
   metrics: Metric[];
   dimensions: Dimension[];
   worksheetFilters?: Filter[];
@@ -29,6 +30,7 @@ export async function aggregateDataset(
 ): Promise<ResolvedChartData> {
   const {
     datasetId,
+    datasetFields: suppliedDatasetFields,
     metrics,
     dimensions,
     worksheetFilters = [],
@@ -36,13 +38,16 @@ export async function aggregateDataset(
     sort = "natural",
   } = input;
 
-  const { data: dsData } = await serviceClient
-    .from("datasets")
-    .select("fields")
-    .eq("id", datasetId)
-    .single();
+  let datasetFields = suppliedDatasetFields;
+  if (!datasetFields) {
+    const { data: dsData } = await serviceClient
+      .from("datasets")
+      .select("fields")
+      .eq("id", datasetId)
+      .single();
 
-  const datasetFields = (dsData?.fields ?? []) as DatasetField[];
+    datasetFields = (dsData?.fields ?? []) as DatasetField[];
+  }
   const fieldTypeMap = Object.fromEntries(datasetFields.map((f) => [f.name, f.type]));
 
   const enrichedMetrics: Metric[] = metrics.map((m) => ({
