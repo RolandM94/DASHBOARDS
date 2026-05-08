@@ -40,6 +40,11 @@ interface Page {
   blocks: PdfBlock[];
 }
 
+interface RowGroup {
+  y: number;
+  blocks: PdfBlock[];
+}
+
 export interface DashboardPdfInput {
   header: DashboardHeader;
   blocks: PdfBlock[];
@@ -48,7 +53,7 @@ export interface DashboardPdfInput {
 
 // ── Page splitting ────────────────────────────────────────────────────────
 
-const ROW_HEIGHT = 18;   // px per grid row unit in the PDF
+const ROW_HEIGHT = 26;   // px per grid row unit in the PDF
 const PAGE_HEIGHT = 37;  // grid units per page (A4 landscape usable height)
 
 function splitPages(blocks: PdfBlock[]): Page[] {
@@ -73,6 +78,17 @@ function splitPages(blocks: PdfBlock[]): Page[] {
   return pages;
 }
 
+function rowGroups(blocks: PdfBlock[]): RowGroup[] {
+  const rows = new Map<number, PdfBlock[]>();
+  for (const block of [...blocks].sort((a, b) => a.y - b.y || a.x - b.x)) {
+    rows.set(block.y, [...(rows.get(block.y) ?? []), block]);
+  }
+  return Array.from(rows.entries()).map(([y, rowBlocks]) => ({
+    y,
+    blocks: rowBlocks.sort((a, b) => a.x - b.x),
+  }));
+}
+
 // ── Filter summary ────────────────────────────────────────────────────────
 
 function renderFilterSummary(filters?: FilterSummary[]): string {
@@ -93,7 +109,8 @@ function renderWidgetSvg(block: PdfBlock, cellW: number, cellH: number): string 
 
   const chartType = (block.chartType ?? "table").toLowerCase();
   const w = Math.max(cellW - 24, 200);
-  const h = Math.max(cellH - 36, 140);
+  const minHeight = chartType === "kpi" ? 120 : chartType.includes("pie") ? 300 : 340;
+  const h = Math.max(cellH - 36, minHeight);
 
   if (chartType.includes("pie")) {
     return svgPie(block.figure, w, h);
@@ -136,7 +153,7 @@ function svgBar(figure: R, w: number, h: number): string {
   const { rows, yKeys } = parseChart(figure.query_output as R);
   if (rows.length === 0) return `<div class="chart-placeholder">No data</div>`;
   const legendRows = Math.max(1, Math.ceil(yKeys.length / 2));
-  const pad = { t: 28, r: 20, b: 100 + legendRows * 16, l: 56 };
+  const pad = { t: 28, r: 20, b: 118 + legendRows * 16, l: 64 };
   const cw = w - pad.l - pad.r;
   const ch = h - pad.t - pad.b;
   const mx = Math.max(...rows.flatMap((r) => r.values), 1);
@@ -147,6 +164,7 @@ function svgBar(figure: R, w: number, h: number): string {
   const axisLines = yAxisTicks(mx, pad, cw, ch);
 
   let bars = "";
+  let xLabels = "";
   for (let i = 0; i < rows.length; i++) {
     for (let j = 0; j < yKeys.length; j++) {
       const bh = Math.max(1, (rows[i].values[j] / mx) * ch);
@@ -154,6 +172,9 @@ function svgBar(figure: R, w: number, h: number): string {
       const y = pad.t + ch - bh;
       bars += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${bh.toFixed(1)}" fill="${CHART_COLORS[j % CHART_COLORS.length]}" rx="2"/>`;
     }
+    const lx = pad.l + i * groupW + groupW / 2;
+    const ly = pad.t + ch + 20;
+    xLabels += `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="end" font-size="9" fill="#374151" transform="rotate(-35 ${lx.toFixed(1)} ${ly.toFixed(1)})">${esc(shortLabel(rows[i].label, 16))}</text>`;
   }
 
   let legend = "";
@@ -163,7 +184,9 @@ function svgBar(figure: R, w: number, h: number): string {
 
   return `<svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg" style="font-family:system-ui,sans-serif">
     ${axisLines}
+    <line x1="${pad.l}" y1="${pad.t + ch}" x2="${pad.l + cw}" y2="${pad.t + ch}" stroke="#cbd5e1" stroke-width="1"/>
     ${bars}
+    ${xLabels}
   </svg><div class="chart-legend">${legend}</div>`;
 }
 
@@ -180,6 +203,7 @@ function svgLine(figure: R, w: number, h: number): string {
 
   let paths = "";
   let dots = "";
+  let xLabels = "";
   for (let j = 0; j < yKeys.length; j++) {
     const step = rows.length > 1 ? cw / (rows.length - 1) : cw / 2;
     const points = rows.map((r, i) => `${(pad.l + i * step).toFixed(1)},${(pad.t + ch - (r.values[j] / mx) * ch).toFixed(1)}`).join(" ");
@@ -188,6 +212,12 @@ function svgLine(figure: R, w: number, h: number): string {
       dots += `<circle cx="${(pad.l + i * step).toFixed(1)}" cy="${(pad.t + ch - (rows[i].values[j] / mx) * ch).toFixed(1)}" r="3" fill="${CHART_COLORS[j % CHART_COLORS.length]}"/>`;
     }
   }
+  rows.forEach((row, index) => {
+    const step = rows.length > 1 ? cw / (rows.length - 1) : cw / 2;
+    const lx = pad.l + index * step;
+    const ly = pad.t + ch + 20;
+    xLabels += `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="end" font-size="9" fill="#374151" transform="rotate(-35 ${lx.toFixed(1)} ${ly.toFixed(1)})">${esc(shortLabel(row.label, 16))}</text>`;
+  });
 
   let legend = "";
   for (let j = 0; j < yKeys.length; j++) {
@@ -196,7 +226,8 @@ function svgLine(figure: R, w: number, h: number): string {
 
   return `<svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg" style="font-family:system-ui,sans-serif">
     ${axisLines}
-    ${paths}${dots}
+    <line x1="${pad.l}" y1="${pad.t + ch}" x2="${pad.l + cw}" y2="${pad.t + ch}" stroke="#cbd5e1" stroke-width="1"/>
+    ${paths}${dots}${xLabels}
   </svg><div class="chart-legend">${legend}</div>`;
 }
 
@@ -330,23 +361,22 @@ export function renderDashboardPdfHtml(input: DashboardPdfInput): string {
   }
 
   const pageContainers = pages.map((page, pageIdx) => {
-    const rows = Math.max(1, Math.max(...page.blocks.map((b) => b.y + b.h - page.top)));
-    const gridHtml = page.blocks.map((block) => {
+    const gridHtml = rowGroups(page.blocks).map((group) => {
+      const rowHtml = group.blocks.map((block) => {
       const gx = block.x + 1;
-      const gy = block.y - page.top + 1;
       const gw = block.w;
-      const gh = block.h;
+      const minHeight = Math.max(72, block.h * ROW_HEIGHT);
 
       if (block.type === "text") {
         const content = block.content ?? "";
         if (!content.trim()) return "";
-        return `<div class="cell text-cell" style="grid-column:${gx}/span ${gw};grid-row:${gy}/span ${gh}">${richTextToHtml(content)}</div>`;
+        return `<div class="cell text-cell" style="grid-column:${gx}/span ${gw};min-height:${minHeight}px">${richTextToHtml(content)}</div>`;
       }
 
       if (block.type === "preview") {
         const cols = block.columns ?? [];
-        const previewRows = (block.previewRows ?? []).slice(0, 15);
-        return `<div class="cell text-cell" style="grid-column:${gx}/span ${gw};grid-row:${gy}/span ${gh}">
+        const previewRows = (block.previewRows ?? []).slice(0, 30);
+        return `<div class="cell text-cell" style="grid-column:${gx}/span ${gw};min-height:${minHeight}px">
           ${block.title ? `<div class="cell-title">${esc(block.title)}</div>` : ""}
           <table class="figure-table"><thead><tr>${cols.map((c) => `<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>${previewRows.map((row) =>
             `<tr>${cols.map((c) => `<td>${esc(tableValue(row[c]))}</td>`).join("")}</tr>`
@@ -356,11 +386,15 @@ export function renderDashboardPdfHtml(input: DashboardPdfInput): string {
 
       // widget
       const cellW = (gw / 12) * 960 - 20;
-      const cellH = gh * ROW_HEIGHT - 32;
-      return `<div class="cell widget-cell" style="grid-column:${gx}/span ${gw};grid-row:${gy}/span ${gh}">
+      const cellH = minHeight - 32;
+      return `<div class="cell widget-cell" style="grid-column:${gx}/span ${gw};min-height:${minHeight}px">
         ${block.title ? `<div class="cell-title">${esc(block.title)}</div>` : ""}
         ${renderWidgetSvg(block, cellW, cellH)}
       </div>`;
+      }).filter(Boolean).join("\n");
+
+      if (!rowHtml) return "";
+      return `<div class="row-grid" data-dashboard-y="${group.y - page.top}">${rowHtml}</div>`;
     }).filter(Boolean).join("\n");
 
     return `<div class="page">
@@ -372,7 +406,7 @@ export function renderDashboardPdfHtml(input: DashboardPdfInput): string {
            </div>`
         : `<div class="page-header-continued">${esc(header.title)} (continued)</div>`
       }
-      <div class="grid" style="grid-template-rows:repeat(${rows},${ROW_HEIGHT}px)">${gridHtml}</div>
+      <div class="dashboard-print">${gridHtml}</div>
     </div>`;
   }).join("");
 
@@ -438,18 +472,27 @@ export function renderDashboardPdfHtml(input: DashboardPdfInput): string {
     border-radius: 4px;
     color: #374151;
   }
-  .grid {
+  .dashboard-print {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .row-grid {
     display: grid;
     grid-template-columns: repeat(12, 1fr);
     gap: 8px;
     width: 100%;
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
   .cell {
     border: 1px solid #e5e7eb;
     border-radius: 5px;
     padding: 8px;
     background: white;
-    overflow: hidden;
+    overflow: visible;
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
   .widget-cell {
     display: flex;
@@ -458,7 +501,7 @@ export function renderDashboardPdfHtml(input: DashboardPdfInput): string {
   .text-cell {
     font-size: 12px;
     line-height: 1.6;
-    overflow: hidden;
+    overflow: visible;
   }
   .cell-title {
     font-size: 11px;

@@ -79,7 +79,7 @@ test("renderDashboardPdfHtml — splits into multiple pages for tall content", (
   assert.ok(pageCount >= 1);
 });
 
-test("renderDashboardPdfHtml — grid placement uses correct column/row spans", () => {
+test("renderDashboardPdfHtml — grid placement uses correct column spans", () => {
   const html = renderDashboardPdfHtml({
     header,
     blocks: [
@@ -88,8 +88,56 @@ test("renderDashboardPdfHtml — grid placement uses correct column/row spans", 
   });
   // grid-column should start at x+1=3 and span w=4
   assert.ok(html.includes("grid-column:3/span 4"));
-  // grid-row should start at y-pageTop+1. pageTop for this block is 5, so row=1
-  assert.ok(html.includes("grid-row:1/span 10"));
+  assert.ok(html.includes("data-dashboard-y=\"0\""));
+});
+
+test("renderDashboardPdfHtml — text blocks are not clipped to dashboard row height", () => {
+  const longText = Array.from({ length: 10 }, (_, index) => `Line ${index + 1}`).join("\n\n");
+  const html = renderDashboardPdfHtml({
+    header,
+    blocks: [
+      { id: "t1", x: 0, y: 0, w: 12, h: 2, type: "text", content: longText },
+    ],
+  });
+
+  assert.ok(html.includes("overflow: visible"));
+  assert.ok(html.includes("Line 10"));
+  assert.ok(!html.includes("grid-row:"));
+});
+
+test("renderDashboardPdfHtml — bar charts reserve a readable export height", () => {
+  const rows = Array.from({ length: 10 }, (_, index) => ({
+    ministry: `Ministry ${index + 1}`,
+    appropriation: 10_000 - index * 200,
+    spent: 7_500 - index * 150,
+  }));
+  const html = renderDashboardPdfHtml({
+    header,
+    blocks: [
+      {
+        id: "w1",
+        x: 0,
+        y: 0,
+        w: 12,
+        h: 8,
+        type: "widget" as const,
+        title: "Budget by Ministry",
+        chartType: "bar",
+        figure: {
+          query_output: {
+            x_key: "ministry",
+            y_keys: ["appropriation", "spent"],
+            columns: ["ministry", "appropriation", "spent"],
+            rows,
+          },
+        },
+      },
+    ],
+  });
+
+  assert.ok(html.includes('height="340"'));
+  assert.ok(html.includes("rotate(-35"));
+  assert.ok(html.includes("Ministry 1"));
 });
 
 test("renderDashboardPdfHtml — title is HTML-escaped", () => {

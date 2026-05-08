@@ -74,8 +74,8 @@ test("renderDashboardPdfHtml preserves grid placement and summarizes filters", (
 
   assert.match(html, /Sales Dashboard/);
   assert.match(html, /region: North/);
-  assert.match(html, /grid-column:1\/span 6;grid-row:1\/span 4/);
-  assert.match(html, /grid-column:7\/span 6;grid-row:1\/span 14/);
+  assert.match(html, /grid-column:1\/span 6;min-height:104px/);
+  assert.match(html, /grid-column:7\/span 6;min-height:364px/);
   assert.match(html, /<strong>note<\/strong>/);
   assert.doesNotMatch(html, /onclick/);
   assert.doesNotMatch(html, /<script>/);
@@ -97,5 +97,5 @@ test("renderDashboardPdfHtml splits tall dashboards into normalized page grids",
 
   assert.equal((html.match(/class="page"/g) ?? []).length, 2);
   assert.match(html, /Operations Dashboard \(continued\)/);
-  assert.match(html, /grid-column:1\/span 12;grid-row:1\/span 4"><p>Second<\/p>/);
+  assert.match(html, /grid-column:1\/span 12;min-height:104px"><p>Second<\/p>/);
 });
