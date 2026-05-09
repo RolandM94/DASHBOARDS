@@ -2,6 +2,30 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 export async function proxy(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  // Routes that require authentication.
+  const isProtected = pathname.startsWith("/home");
+
+  // Auth routes redirect to /home if already signed in.
+  const isAuthRoute =
+    pathname.startsWith("/login") ||
+    pathname.startsWith("/signup");
+
+  if (!isProtected && !isAuthRoute) {
+    return NextResponse.next({ request });
+  }
+
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    if (isProtected) {
+      const loginUrl = request.nextUrl.clone();
+      loginUrl.pathname = "/login";
+      loginUrl.searchParams.set("next", pathname);
+      return NextResponse.redirect(loginUrl);
+    }
+    return NextResponse.next({ request });
+  }
+
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -29,17 +53,6 @@ export async function proxy(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-
-  const { pathname } = request.nextUrl;
-
-  // Routes that require authentication
-  const isProtected =
-    pathname.startsWith("/home");
-
-  // Auth routes — redirect to /analytics if already signed in
-  const isAuthRoute =
-    pathname.startsWith("/login") ||
-    pathname.startsWith("/signup");
 
   if (isProtected && !user) {
     const loginUrl = request.nextUrl.clone();
