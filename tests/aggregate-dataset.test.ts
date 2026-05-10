@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { aggregateDataset } from "../lib/data/aggregateDataset.ts";
+import { buildCacheKey, clearAllCaches, getCached, invalidateDatasetCache, setCache } from "../lib/data/aggregateCache.ts";
 
 test("aggregateDataset uses supplied dataset fields without querying dataset metadata", async () => {
   let fromCalls = 0;
@@ -29,4 +30,23 @@ test("aggregateDataset uses supplied dataset fields without querying dataset met
   assert.equal(fromCalls, 0);
   assert.equal(rpcCalls, 1);
   assert.deepEqual(result.data, [{ "Average Score": 2, _label: "Total" }]);
+});
+
+test("invalidateDatasetCache removes entries keyed by aggregate rpc dataset id", () => {
+  clearAllCaches();
+  const key = buildCacheKey({
+    p_dataset_id: "dataset-1",
+    p_dimensions: [],
+    p_metrics: [],
+    p_worksheet_filters: [],
+    p_global_filters: {},
+    p_smart_filter_conditions: [],
+    p_sort: "natural",
+  });
+
+  setCache(key, { ok: true });
+  assert.deepEqual(getCached(key), { ok: true });
+
+  invalidateDatasetCache("dataset-1");
+  assert.equal(getCached(key), undefined);
 });

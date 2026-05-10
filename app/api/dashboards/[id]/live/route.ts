@@ -3,7 +3,7 @@ import { loadDashboardScope, type DashboardWorksheetRow } from "@/lib/auth/dashb
 import { aggregateDataset } from "@/lib/data/aggregateDataset";
 import { getWorkbookSheet } from "@/lib/workbook";
 import { NextResponse } from "next/server";
-import type { WidgetBlockConfig, Filter, Metric, Dimension, ResolvedChartData, Worksheet, WorksheetStatus } from "@/types";
+import type { WidgetBlockConfig, Metric, Dimension, ResolvedChartData, Worksheet, WorksheetStatus } from "@/types";
 import { buildCacheKey, getCached, setCache } from "@/lib/data/aggregateCache";
 
 const LIVE_CACHE_TTL = 5 * 60 * 1000;

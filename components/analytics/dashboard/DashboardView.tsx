@@ -851,7 +851,7 @@ export function DashboardView({ dashboard, initialWidgetData }: Props) {
             {authenticated && (
               <NLQueryBar
                 datasetIds={datasetIds}
-                onResult={({ chartData, title, chartType }) => {
+                onResult={() => {
                   // Future: display inline chart result
                 }}
               />

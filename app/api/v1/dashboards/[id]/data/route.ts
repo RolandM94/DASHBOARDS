@@ -23,7 +23,7 @@ import { authenticateApiKey } from "@/lib/data/apiAuth";
 import { getWorkbookSheet } from "@/lib/workbook";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import type { WidgetBlockConfig, Filter, Metric, Dimension, ResolvedChartData, Worksheet, WorksheetStatus } from "@/types";
+import type { CanvasBlock, WidgetBlockConfig, Metric, Dimension, ResolvedChartData, Worksheet, WorksheetStatus } from "@/types";
 
 function toWorksheet(row: DashboardWorksheetRow): Worksheet {
   return {
@@ -53,12 +53,17 @@ export async function GET(
     if (!user) {
       return NextResponse.json({ error: "Authentication required. Provide an API key via Authorization: Bearer <key>" }, { status: 401 });
     }
+  } else if (!apiAuth.scopes.some((scope) => scope === "read" || scope === "admin")) {
+    return NextResponse.json({ error: "API key does not have read scope" }, { status: 403 });
   }
 
-  const { scope, error, status } = await loadDashboardScope(supabase, serviceClient, id);
+  const { scope, error, status } = apiAuth
+    ? await loadApiKeyDashboardScope(serviceClient, id, apiAuth.userId)
+    : await loadDashboardScope(supabase, serviceClient, id);
   if (!scope) return NextResponse.json({ error }, { status });
 
-  const widgetBlocks = scope.dashboard.blocks.filter(
+  const dashboardBlocks = scope.dashboard.blocks as CanvasBlock[];
+  const widgetBlocks = dashboardBlocks.filter(
     (b): b is WidgetBlockConfig => b.type === "widget",
   );
 
@@ -109,4 +114,55 @@ export async function GET(
     widgets,
     worksheets,
   });
+}
+
+async function loadApiKeyDashboardScope(
+  serviceClient: Awaited<ReturnType<typeof createServiceClient>>,
+  dashboardId: string,
+  userId: string,
+) {
+  const { data: dashboard, error: dashErr } = await serviceClient
+    .from("dashboards")
+    .select("id, canvas_id, title, permission, published_at, blocks, layout, user_id")
+    .eq("id", dashboardId)
+    .single();
+
+  if (dashErr || !dashboard || dashboard.user_id !== userId) {
+    return { error: "Dashboard not found", status: 404 };
+  }
+
+  const blocks = (dashboard.blocks ?? []) as CanvasBlock[];
+  const worksheetIds = Array.from(new Set(
+    blocks
+      .filter((block): block is WidgetBlockConfig => block.type === "widget")
+      .map((block) => block.worksheetId),
+  ));
+
+  let worksheets: DashboardWorksheetRow[] = [];
+  if (worksheetIds.length > 0) {
+    const { data, error } = await serviceClient
+      .from("worksheets")
+      .select("id, dataset_id, name, description, config, status, created_at, updated_at")
+      .in("id", worksheetIds);
+
+    if (error) return { error: error.message, status: 500 };
+    worksheets = (data ?? []) as DashboardWorksheetRow[];
+  }
+
+  return {
+    status: 200,
+    scope: {
+      dashboard: {
+        id: dashboard.id,
+        canvas_id: dashboard.canvas_id,
+        title: dashboard.title,
+        permission: dashboard.permission,
+        published_at: dashboard.published_at,
+        blocks: dashboard.blocks,
+        layout: dashboard.layout,
+      },
+      worksheets,
+      datasetIds: Array.from(new Set(worksheets.map((worksheet) => worksheet.dataset_id))),
+    },
+  };
 }

@@ -38,17 +38,20 @@ export async function POST(
   let datasetId: string | undefined;
   const serviceClient = await createServiceClient();
 
-  // If template has sample data, create a dataset + rows for the user
-  const sampleRows = tpl.sample_dataset as Array<Record<string, unknown>> | null;
-  if (sampleRows && sampleRows.length > 0) {
-    const sampleFields = (tpl.sample_dataset_fields as Array<{ name: string; type: string }>) ?? [];
+  const sampleRows = (tpl.sample_dataset as Array<Record<string, unknown>> | null) ?? [];
+  const sampleFields = (tpl.sample_dataset_fields as Array<{ name: string; type: string; sample?: string[] }> | null) ?? [];
 
+  // Create a dataset for template fields even when the seed has no rows yet.
+  if (sampleRows.length > 0 || sampleFields.length > 0) {
     const { data: ds, error: dsErr } = await supabase
       .from("datasets")
       .insert({
         file_name: `${tpl.title} — Sample Data`,
         user_id: user.id,
-        fields: sampleFields,
+        fields: sampleFields.map((field) => ({
+          ...field,
+          sample: field.sample ?? [],
+        })),
         row_count: sampleRows.length,
         is_seed: false,
       })
@@ -58,31 +61,37 @@ export async function POST(
     if (dsErr) return NextResponse.json({ error: dsErr.message }, { status: 500 });
     datasetId = ds.id;
 
-    // Insert rows
-    const dbRows = sampleRows.map((row, i) => ({ dataset_id: datasetId, row_index: i, data: row }));
-    const { error: rowsErr } = await serviceClient
-      .from("dataset_rows")
-      .insert(dbRows);
+    if (sampleRows.length > 0) {
+      const dbRows = sampleRows.map((row, i) => ({ dataset_id: datasetId, row_index: i, data: row }));
+      const { error: rowsErr } = await serviceClient
+        .from("dataset_rows")
+        .insert(dbRows);
 
-    if (rowsErr) {
-      // Clean up dataset
-      await supabase.from("datasets").delete().eq("id", datasetId);
-      return NextResponse.json({ error: rowsErr.message }, { status: 500 });
+      if (rowsErr) {
+        await supabase.from("datasets").delete().eq("id", datasetId);
+        return NextResponse.json({ error: rowsErr.message }, { status: 500 });
+      }
     }
   } else if (tplData.datasetId) {
     datasetId = tplData.datasetId as string;
   }
 
+  if (!datasetId) {
+    return NextResponse.json({ error: "Template does not include a dataset or sample fields" }, { status: 400 });
+  }
+
   // Create worksheets from the template's sheets config
   const worksheetIds: { id: string; name: string }[] = [];
   for (const sheet of sheets) {
+    const sheetId = sheet.name ?? "Sheet 1";
+    const workbookSheet = { ...sheet, id: sheetId, name: sheetId };
     const { data: ws, error: wsErr } = await supabase
       .from("worksheets")
       .insert({
-        name: sheet.name ?? "Sheet 1",
-        dataset_id: datasetId ?? null,
-        config: { version: 1, activeSheetId: sheet.name ?? "Sheet 1", sheets: [sheet] },
-        created_by: user.id,
+        name: sheetId,
+        dataset_id: datasetId,
+        config: { version: 1, activeSheetId: sheetId, sheets: [workbookSheet] },
+        user_id: user.id,
         status: "saved",
       })
       .select("id, name")
@@ -100,8 +109,9 @@ export async function POST(
   // Map template worksheet references to the newly created worksheets
   const nameToId = Object.fromEntries(worksheetIds.map((w) => [w.name, w.id]));
   const blocks = tplBlocks.map((block) => {
-    if (block.type === "widget" && block.sheetName && nameToId[block.sheetName as string]) {
-      return { ...block, worksheetId: nameToId[block.sheetName as string], sheetId: block.sheetName };
+    const sheetName = block.sheetName ?? block.sheetId;
+    if (block.type === "widget" && typeof sheetName === "string" && nameToId[sheetName]) {
+      return { ...block, worksheetId: nameToId[sheetName], sheetId: sheetName };
     }
     return block;
   });
@@ -112,7 +122,7 @@ export async function POST(
       name: `${tpl.title} (from template)`,
       blocks,
       layout: tplLayout,
-      created_by: user.id,
+      user_id: user.id,
       published: false,
     })
     .select("id")

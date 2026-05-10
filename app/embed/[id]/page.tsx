@@ -3,7 +3,7 @@ import { loadDashboardScope, type DashboardWorksheetRow } from "@/lib/auth/dashb
 import { aggregateDataset } from "@/lib/data/aggregateDataset";
 import { getWorkbookSheet } from "@/lib/workbook";
 import { renderDashboardPdfHtml } from "@/lib/reports/dashboardPdfHtml";
-import type { WidgetBlockConfig, Metric, Dimension, ResolvedChartData, Worksheet, WorksheetStatus } from "@/types";
+import type { WidgetBlockConfig, Metric, Dimension, Worksheet, WorksheetStatus } from "@/types";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = { robots: "noindex" };
@@ -26,7 +26,7 @@ export default async function EmbedPage({ params }: { params: Promise<{ id: stri
   const supabase = await createClient();
   const serviceClient = await createServiceClient();
 
-  const { scope, error } = await loadDashboardScope(supabase, serviceClient, id);
+  const { scope } = await loadDashboardScope(supabase, serviceClient, id);
   if (!scope) return <div style={{ padding: 40, color: "#6b7280", textAlign: "center" }}>Dashboard not found</div>;
 
   const dashboard = scope.dashboard;
@@ -102,7 +102,6 @@ export default async function EmbedPage({ params }: { params: Promise<{ id: stri
     return null;
   }).filter(Boolean);
 
-  const orientation = "landscape";
   const pageHtml = renderDashboardPdfHtml({
     header: {
       title: dashboard.title,
@@ -131,8 +130,7 @@ export default async function EmbedPage({ params }: { params: Promise<{ id: stri
   const resizeScript = `
     <script>
       (function() {
-        var sentinel = document.querySelector('.grid');
-        if (!sentinel) return;
+        var sentinel = document.body;
         var ro = new ResizeObserver(function() {
           var h = document.documentElement.scrollHeight;
           parent.postMessage({ type: 'resize', height: h }, '*');

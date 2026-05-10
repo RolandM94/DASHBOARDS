@@ -70,10 +70,13 @@ export async function DELETE(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
 
-  // Extract key id from the URL path
   const url = new URL(request.url);
-  const segments = url.pathname.split("/").filter(Boolean);
-  const keyId = segments[segments.length - 1];
+  let keyId = url.searchParams.get("id") ?? "";
+
+  if (!keyId) {
+    const body = await request.json().catch(() => ({})) as { id?: string };
+    keyId = body.id ?? "";
+  }
 
   if (!keyId) return NextResponse.json({ error: "Key ID required" }, { status: 400 });
 

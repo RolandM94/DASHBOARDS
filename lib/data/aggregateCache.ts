@@ -32,7 +32,8 @@ export function buildCacheKey(params: Record<string, unknown>): string {
     hash = ((hash << 5) - hash) + char;
     hash |= 0; // Convert to 32bit integer
   }
-  return `agg:${hash}:${sorted.length}`;
+  const datasetPart = typeof params.p_dataset_id === "string" ? `dataset:${params.p_dataset_id}:` : "";
+  return `agg:${datasetPart}${hash}:${sorted.length}`;
 }
 
 export function getCached<T>(key: string): T | undefined {
@@ -56,7 +57,7 @@ export function setCache<T>(key: string, data: T, ttlMs = DEFAULT_TTL_MS): void 
 
 export function invalidateDatasetCache(datasetId: string): void {
   for (const key of store.keys()) {
-    if (key.includes(`datasetId="${datasetId}"`)) {
+    if (key.includes(`dataset:${datasetId}:`)) {
       store.delete(key);
     }
   }
