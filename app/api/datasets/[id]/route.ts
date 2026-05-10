@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { invalidateDatasetCache } from "@/lib/data/aggregateCache";
 import { NextResponse } from "next/server";
 import type { DatasetField } from "@/types";
 
@@ -43,5 +44,8 @@ export async function DELETE(
     .eq("user_id", user.id);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  invalidateDatasetCache(id);
+
   return new NextResponse(null, { status: 204 });
 }

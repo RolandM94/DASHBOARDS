@@ -1,5 +1,6 @@
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { loadDashboardScope, scopeContainsDataset } from "@/lib/auth/dashboardScope";
+import { invalidateDatasetCache } from "@/lib/data/aggregateCache";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
@@ -114,6 +115,8 @@ export async function POST(
     .insert(records);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  invalidateDatasetCache(id);
 
   return NextResponse.json({ inserted: records.length }, { status: 201 });
 }

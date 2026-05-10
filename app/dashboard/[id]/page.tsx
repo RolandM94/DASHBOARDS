@@ -8,7 +8,7 @@ import { DashboardView } from "@/components/analytics/dashboard/DashboardView";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { BarChart2, Loader2, AlertTriangle } from "lucide-react";
-import type { PublishedDashboard, Worksheet, Dataset } from "@/types";
+import type { PublishedDashboard, Worksheet, Dataset, ResolvedChartData } from "@/types";
 
 export default function DashboardPage() {
   const { id } = useParams<{ id: string }>();
@@ -22,6 +22,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(!storeDb);
   const [notFound, setNotFound] = useState(false);
   const [missingCount, setMissingCount] = useState(0);
+  const [widgetData, setWidgetData] = useState<Record<string, ResolvedChartData | null> | undefined>(undefined);
 
   useEffect(() => {
     if (storeDb) {
@@ -32,13 +33,14 @@ export default function DashboardPage() {
 
     // Not in store — fetch from API (works for public dashboards too)
     async function fetchDashboard() {
-      const res = await fetch(`/api/dashboards/${id}`);
+      const res = await fetch(`/api/dashboards/${id}/live`);
       if (!res.ok) { setNotFound(true); setLoading(false); return; }
 
-      const { dashboard: db, worksheets, datasets } = await res.json() as {
+      const { dashboard: db, worksheets, datasets, widgetData: wd } = await res.json() as {
         dashboard: PublishedDashboard;
         worksheets: Worksheet[];
         datasets: Dataset[];
+        widgetData: Record<string, ResolvedChartData | null>;
       };
 
       // Hydrate stores so charts can render
@@ -76,6 +78,7 @@ export default function DashboardPage() {
 
       setDashboards([...allDashboards.filter((d) => d.id !== db.id), db]);
       setDashboard(db);
+      setWidgetData(wd);
       setLoading(false);
     }
 
@@ -123,7 +126,7 @@ export default function DashboardPage() {
           </span>
         </div>
       )}
-      <DashboardView dashboard={dashboard} />
+      <DashboardView dashboard={dashboard} initialWidgetData={widgetData} />
     </>
   );
 }

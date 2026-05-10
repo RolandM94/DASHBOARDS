@@ -10,6 +10,7 @@ import type {
 import { isNumericType } from "@/types";
 import { resolveSmartFilter } from "@/lib/data/smart-filters";
 import type { createClient, createServiceClient } from "@/lib/supabase/server";
+import { buildCacheKey, getCached, setCache } from "@/lib/data/aggregateCache";
 
 type SupabaseClient = Awaited<ReturnType<typeof createClient>>;
 type ServiceClient = Awaited<ReturnType<typeof createServiceClient>>;
@@ -22,6 +23,10 @@ export interface AggregateDatasetInput {
   worksheetFilters?: Filter[];
   globalFilters?: ActiveGlobalFilters | Record<string, string | string[]>;
   sort?: SortOrder;
+  /** Skip cache lookup and always query the database. */
+  skipCache?: boolean;
+  /** Custom TTL in ms (default 5 minutes). */
+  cacheTtlMs?: number;
 }
 
 export async function aggregateDataset(
@@ -36,6 +41,8 @@ export async function aggregateDataset(
     worksheetFilters = [],
     globalFilters = {},
     sort = "natural",
+    skipCache = false,
+    cacheTtlMs,
   } = input;
 
   let datasetFields = suppliedDatasetFields;
@@ -71,7 +78,7 @@ export async function aggregateDataset(
     if (condition) smartConditions.push(condition);
   }
 
-  const { data, error } = await serviceClient.rpc("aggregate_dataset", {
+  const rpcParams = {
     p_dataset_id: datasetId,
     p_dimensions: dimensions,
     p_metrics: enrichedMetrics,
@@ -79,7 +86,16 @@ export async function aggregateDataset(
     p_global_filters: globalFilters,
     p_smart_filter_conditions: smartConditions,
     p_sort: sort,
-  });
+  };
+
+  // ── Cache check ──────────────────────────────────────────────
+  if (!skipCache) {
+    const cacheKey = buildCacheKey(rpcParams);
+    const cached = getCached<ResolvedChartData>(cacheKey);
+    if (cached) return cached;
+  }
+
+  const { data, error } = await serviceClient.rpc("aggregate_dataset", rpcParams);
 
   if (error) throw new Error(error.message);
 
@@ -113,11 +129,19 @@ export async function aggregateDataset(
     chartData = rows;
   }
 
-  return {
+  const result: ResolvedChartData = {
     data: chartData as ResolvedChartData["data"],
     xKey,
     yKeys,
   };
+
+  // ── Cache store ─────────────────────────────────────────────
+  if (!skipCache) {
+    const cacheKey = buildCacheKey(rpcParams);
+    setCache(cacheKey, result, cacheTtlMs);
+  }
+
+  return result;
 }
 
 export async function assertDatasetAccess(

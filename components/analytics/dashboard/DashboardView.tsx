@@ -97,7 +97,7 @@ const permissionLabel = { private: "Private", org: "Organisation", public: "Publ
 // ── Read-only widget ──────────────────────────────────────────────
 
 function ReadOnlyWidget({
-  block, activeFilters, activeSmartFilters, dashboardId, onDataCountChange, onChartDataChange, refreshKey,
+  block, activeFilters, activeSmartFilters, dashboardId, onDataCountChange, onChartDataChange, refreshKey, initialData,
 }: {
   block: WidgetBlockConfig;
   activeFilters: ActiveGlobalFilters;
@@ -106,6 +106,7 @@ function ReadOnlyWidget({
   onDataCountChange?: (count: number) => void;
   onChartDataChange?: (data: ResolvedChartData | null) => void;
   refreshKey?: number;
+  initialData?: ResolvedChartData | null;
 }) {
   const worksheet = useWorksheetStore((s) => s.getWorksheetById(block.worksheetId));
   const dataset   = useWorksheetStore((s) => worksheet ? s.getDatasetById(worksheet.datasetId) : undefined);
@@ -117,6 +118,7 @@ function ReadOnlyWidget({
   const [fetching, setFetching]   = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const requestSeq = useRef(0);
+  const consumedInitial = useRef(false);
   const sheetKey = useMemo(() => {
     if (!sheet) return "";
     return JSON.stringify({
@@ -131,9 +133,25 @@ function ReadOnlyWidget({
   const activeFiltersKey = useMemo(() => JSON.stringify(activeFilters), [activeFilters]);
   const activeSmartFiltersKey = useMemo(() => JSON.stringify(activeSmartFilters), [activeSmartFilters]);
 
+  // Use pre-loaded data from the live endpoint when available and no filters active
+  useEffect(() => {
+    if (initialData !== undefined && !consumedInitial.current) {
+      consumedInitial.current = true;
+      setChartData(initialData);
+      setFetching(false);
+      setFetchError(null);
+    }
+  }, [initialData]);
+
   useEffect(() => {
     if (!worksheet || !dataset || !sheet) return;
     if (sheet.metrics.length === 0) { setChartData(null); setFetchError(null); return; }
+
+    // Skip fetch if we already have initial data and no active filters are changing
+    if (consumedInitial.current && !hasActiveFilterValue(Object.values(activeFilters)[0]) && activeSmartFilters.length === 0) {
+      // Only skip if we've already rendered with initial data and filters haven't changed
+      if (chartData && !fetching) return;
+    }
 
     const seq = requestSeq.current + 1;
     requestSeq.current = seq;
@@ -342,7 +360,7 @@ const CARD_SHADOW = "0px 0px 5px 0px rgba(0,0,0,.02), 0px 2px 10px 0px rgba(0,0,
 // ── Read-only widget card ─────────────────────────────────────────
 
 function ReadOnlyWidgetCard({
-  block, title, activeFilters, activeSmartFilters, onFilterChange, dashboardId,
+  block, title, activeFilters, activeSmartFilters, onFilterChange, dashboardId, initialData,
 }: {
   block: WidgetBlockConfig;
   title: string;
@@ -350,6 +368,7 @@ function ReadOnlyWidgetCard({
   activeSmartFilters: ActiveSmartFilters;
   onFilterChange: (field: string, value: GlobalFilterValue) => void;
   dashboardId: string;
+  initialData?: ResolvedChartData | null;
 }) {
   const [dataCount, setDataCount]       = useState<number | null>(null);
   const [refreshKey, setRefreshKey]     = useState(0);
@@ -494,6 +513,7 @@ function ReadOnlyWidgetCard({
           onDataCountChange={setDataCount}
           onChartDataChange={setWidgetData}
           refreshKey={refreshKey}
+          initialData={initialData}
         />
       </div>
     </div>
@@ -503,7 +523,7 @@ function ReadOnlyWidgetCard({
 // ── Shared block card ─────────────────────────────────────────────
 
 function BlockCard({
-  block, title, activeFilters, activeSmartFilters, onFilterChange, dashboardId, datasetIds,
+  block, title, activeFilters, activeSmartFilters, onFilterChange, dashboardId, datasetIds, initialData,
 }: {
   block: CanvasBlock;
   title: string;
@@ -512,6 +532,7 @@ function BlockCard({
   onFilterChange: (field: string, value: GlobalFilterValue) => void;
   dashboardId: string;
   datasetIds: string[];
+  initialData?: ResolvedChartData | null;
 }) {
   if (block.type === "widget") {
     return (
@@ -522,6 +543,7 @@ function BlockCard({
         activeSmartFilters={activeSmartFilters}
         onFilterChange={onFilterChange}
         dashboardId={dashboardId}
+        initialData={initialData}
       />
     );
   }
@@ -567,7 +589,7 @@ const MOBILE_HEIGHTS: Record<BlockType, number> = {
 // ── Mobile stacked layout ─────────────────────────────────────────
 
 function MobileStack({
-  blocks, blockTitle, activeFilters, activeSmartFilters, onFilterChange, dashboardId, datasetIds,
+  blocks, blockTitle, activeFilters, activeSmartFilters, onFilterChange, dashboardId, datasetIds, initialWidgetData,
 }: {
   blocks: CanvasBlock[];
   blockTitle: (b: CanvasBlock) => string;
@@ -576,6 +598,7 @@ function MobileStack({
   onFilterChange: (field: string, value: GlobalFilterValue) => void;
   dashboardId: string;
   datasetIds: string[];
+  initialWidgetData?: Record<string, ResolvedChartData | null>;
 }) {
   return (
     <div className="space-y-3">
@@ -589,6 +612,7 @@ function MobileStack({
             onFilterChange={onFilterChange}
             dashboardId={dashboardId}
             datasetIds={datasetIds}
+            initialData={initialWidgetData?.[block.id]}
           />
         </div>
       ))}
@@ -600,9 +624,10 @@ function MobileStack({
 
 interface Props {
   dashboard: PublishedDashboard;
+  initialWidgetData?: Record<string, ResolvedChartData | null>;
 }
 
-export function DashboardView({ dashboard }: Props) {
+export function DashboardView({ dashboard, initialWidgetData }: Props) {
   const isMobile = useIsMobile();
   const [activeFilters, setActiveFilters] = useState<ActiveGlobalFilters>({});
   const [activeSmartFilters, setActiveSmartFilters] = useState<ActiveSmartFilters>([]);
@@ -882,6 +907,7 @@ export function DashboardView({ dashboard }: Props) {
             onFilterChange={handleFilterChange}
             dashboardId={dashboard.id}
             datasetIds={datasetIds}
+            initialWidgetData={initialWidgetData}
           />
         ) : (
           <GridLayout
@@ -903,6 +929,7 @@ export function DashboardView({ dashboard }: Props) {
                   onFilterChange={handleFilterChange}
                   dashboardId={dashboard.id}
                   datasetIds={datasetIds}
+                  initialData={initialWidgetData?.[block.id]}
                 />
               </div>
             ))}
