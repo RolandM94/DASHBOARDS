@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Badge }  from "@/components/ui/badge";
 import {
   BarChart2, LayoutDashboard, Plus, Database, Share2,
-  Globe, Users, Lock, Leaf, Trash2, FileText, Bookmark,
+  Globe, Users, Lock, Leaf, Trash2, FileText, Bookmark, Sparkles,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -373,6 +373,12 @@ export function AnalyticsHome() {
             </p>
           </div>
           <div className="flex gap-2">
+            <Link href="/home/templates">
+              <Button variant="outline" className="gap-2">
+                <Sparkles className="h-4 w-4" />
+                Templates
+              </Button>
+            </Link>
             <Link href="/home/workbook/new" data-tour-id="new-workbook-cta">
               <Button className="gap-2">
                 <Plus className="h-4 w-4" />
