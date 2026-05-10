@@ -4,8 +4,6 @@ import type { NextRequest } from "next/server";
 
 export const runtime = "nodejs";
 
-const ALLOWED_TYPES = ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain", "text/markdown", "text/x-markdown"];
-
 const MIME_TO_FILE_TYPE: Record<string, string> = {
   "application/pdf": "pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
@@ -50,7 +48,7 @@ export async function POST(request: NextRequest) {
     const storagePath = `${user.id}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
 
     // Upload to Supabase storage
-    const { data: uploadData, error: uploadError } = await supabase.storage
+    const { error: uploadError } = await supabase.storage
       .from("report-reference-docs")
       .upload(storagePath, fileBuffer, {
         contentType: file.type,

@@ -120,6 +120,8 @@ function ReadOnlyWidget({
   const [fetchError, setFetchError] = useState<string | null>(null);
   const requestSeq = useRef(0);
   const consumedInitial = useRef(false);
+  const chartDataRef = useRef<ResolvedChartData | null>(null);
+  const fetchingRef = useRef(false);
   const sheetKey = useMemo(() => {
     if (!sheet) return "";
     return JSON.stringify({
@@ -133,6 +135,14 @@ function ReadOnlyWidget({
   }, [sheet]);
   const activeFiltersKey = useMemo(() => JSON.stringify(activeFilters), [activeFilters]);
   const activeSmartFiltersKey = useMemo(() => JSON.stringify(activeSmartFilters), [activeSmartFilters]);
+
+  useEffect(() => {
+    chartDataRef.current = chartData;
+  }, [chartData]);
+
+  useEffect(() => {
+    fetchingRef.current = fetching;
+  }, [fetching]);
 
   // Use pre-loaded data from the live endpoint when available and no filters active
   useEffect(() => {
@@ -151,7 +161,7 @@ function ReadOnlyWidget({
     // Skip fetch if we already have initial data and no active filters are changing
     if (consumedInitial.current && !hasActiveFilterValue(Object.values(activeFilters)[0]) && activeSmartFilters.length === 0) {
       // Only skip if we've already rendered with initial data and filters haven't changed
-      if (chartData && !fetching) return;
+      if (chartDataRef.current && !fetchingRef.current) return;
     }
 
     const seq = requestSeq.current + 1;

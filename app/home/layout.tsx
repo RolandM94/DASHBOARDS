@@ -212,7 +212,7 @@ export default function AnalyticsLayout({ children }: { children: React.ReactNod
         }
       }
     });
-  }, [router]);
+  }, [router, hasSeenTour, startTour]);
 
   async function handleSignOut() {
     const supabase = createClient();

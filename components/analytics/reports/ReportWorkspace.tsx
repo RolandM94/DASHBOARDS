@@ -87,14 +87,6 @@ type BusyAction =
   | `section:${string}`
   | `export:${ReportExportFormat}`;
 
-const JOB_TYPE_TO_ACTION: Record<string, BusyAction> = {
-  capture_source_snapshot: "capture",
-  generate_blueprint: "blueprint",
-  generate_all_sections: "sections",
-  compile_report: "compile",
-  export_report: "export:docx",
-};
-
 type CompilePayload = {
   title?: string;
   sections?: Array<{ id?: string; title?: string; content?: string; status?: string }>;
@@ -917,12 +909,6 @@ export function ReportWorkspace() {
     fetchJobs(projectId).catch(() => {});
   }
 
-  async function startJobPoll(projectId?: string) {
-    if (!projectId) return;
-    await fetchJobs(projectId);
-    setBusyAction("jobPoll");
-  }
-
   async function runProjectAction<T>(action: BusyAction, fn: () => Promise<T>, success: string) {
     setBusyAction(action);
     try {
@@ -1045,7 +1031,6 @@ export function ReportWorkspace() {
   const hasSnapshot = logs.some((log) => log.actionType === "capture_source_snapshot" && log.status === "success");
   const hasGeneratedSections = sections.some((section) => section.generatedContent || section.editedContent);
   const activeJob = jobs.find((job) => job.status === "queued" || job.status === "running");
-  const isPolling = busyAction === "jobPoll";
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto">

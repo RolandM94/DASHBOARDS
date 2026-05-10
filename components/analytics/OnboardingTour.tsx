@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Joyride, type Step, EVENTS, STATUS, type Controls } from "react-joyride";
+import { Joyride, type Step, EVENTS, STATUS } from "react-joyride";
 import { useTourStore } from "@/store/tourStore";
 
 interface TourEvent {
@@ -117,18 +117,13 @@ function storeStepIndex(idx: number): void {
   try { sessionStorage.setItem(STEP_INDEX_KEY, String(idx)); } catch {}
 }
 
-function clearStoredStep(): void {
-  try { sessionStorage.removeItem(STEP_INDEX_KEY); } catch {}
-}
-
 export default function OnboardingTour() {
-  const { isActive, markComplete, dismissTour, setActive } = useTourStore();
+  const { isActive, markComplete, dismissTour } = useTourStore();
   const [stepIndex, setStepIndex] = useState(() => isActive ? getStoredStepIndex() : 0);
   const [tourKey, setTourKey] = useState(0);
   const retryCountRef = useRef(0);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingStepRef = useRef<number | null>(null);
   const pathnameRef = useRef(typeof window !== "undefined" ? window.location.pathname : "/home");
 
   // Keep pathnameRef updated
@@ -164,11 +159,11 @@ export default function OnboardingTour() {
     }
   }, [stepIndex]);
 
-  function currentPageBase(): string {
+  const currentPageBase = useCallback((): string => {
     return pathnameRef.current.split("/").slice(0, 3).join("/");
-  }
+  }, []);
 
-  function navigateToPage(page: string): boolean {
+  const navigateToPage = useCallback((page: string): boolean => {
     const cur = currentPageBase();
     const tgt = page.split("/").slice(0, 3).join("/");
     if (cur === tgt) return false;
@@ -180,7 +175,7 @@ export default function OnboardingTour() {
     // Use location.href for a clean page load (ensures targets exist)
     window.location.href = page;
     return true;
-  }
+  }, [currentPageBase]);
 
   const scheduleRetry = useCallback(() => {
     if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
@@ -191,7 +186,7 @@ export default function OnboardingTour() {
   }, []);
 
   const handleEvent = useCallback(
-    (data: TourEvent, _controls: Controls) => {
+    (data: TourEvent) => {
       const { type, action, index, status } = data;
 
       if (status === STATUS.FINISHED || status === STATUS.SKIPPED) {
@@ -252,7 +247,7 @@ export default function OnboardingTour() {
         setStepIndex(nextIndex);
       }
     },
-    [stepIndex, markComplete, dismissTour, scheduleRetry]
+    [stepIndex, markComplete, dismissTour, scheduleRetry, currentPageBase, navigateToPage]
   );
 
   return (

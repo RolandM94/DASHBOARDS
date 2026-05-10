@@ -6,9 +6,6 @@ import {
   buildReportJobInsert,
   buildReportJobPatch,
   dbToReportJob,
-  isOneOf,
-  REPORT_JOB_STATUSES,
-  REPORT_JOB_TYPES,
 } from "@/lib/reports/models";
 import type { ReportJob, ReportJobStatus, ReportJobType } from "@/types";
 
@@ -68,15 +65,13 @@ export async function startJob(
   supabase: SupabaseRouteClient,
   jobId: string
 ): Promise<void> {
-  const { data, error } = await supabase
+  const { error } = await supabase
     .from("report_jobs")
     .update({
       status: "running",
       started_at: new Date().toISOString(),
     })
-    .eq("id", jobId)
-    .select(REPORT_JOB_COLUMNS)
-    .single();
+    .eq("id", jobId);
 
   if (error) throw new Error(error.message);
 }

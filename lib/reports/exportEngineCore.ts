@@ -17,26 +17,13 @@ import {
 } from "docx";
 import {
   esc,
-  nv,
-  axisValue,
   kpiValue,
-  yAxisTicks,
   parseChart,
   parseTable,
-  tableValue,
-  svgBar,
-  svgLine,
-  svgPie,
-  svgArea,
   figureHtml,
   looksLikeHtml,
-  sanitizeRichHtml,
-  inlineMd,
-  mdToHtml,
   richTextToHtml,
-  plainTextFromMarkdown,
   plainTextFromRichText,
-  shortLabel,
 } from "@/lib/reports/chartRenderer";
 import { renderPdfFromHtml } from "@/lib/reports/pdfRenderer";
 import type { ReportExportFormat } from "@/types";
@@ -294,92 +281,6 @@ export function renderReportText(payload: JsonObject, options: ReportExportOptio
   }
 
   return lines.join("\n");
-}
-
-function xmlEscape(value: unknown): string {
-  return esc(value).replace(/'/g, "&apos;");
-}
-
-function docxParagraph(text: string, style?: string): string {
-  const styleXml = style ? `<w:pPr><w:pStyle w:val="${style}"/></w:pPr>` : "";
-  return `<w:p>${styleXml}<w:r><w:t xml:space="preserve">${xmlEscape(text)}</w:t></w:r></w:p>`;
-}
-
-function crc32(bytes: Uint8Array): number {
-  let crc = 0xffffffff;
-  for (const byte of bytes) {
-    crc ^= byte;
-    for (let index = 0; index < 8; index += 1) {
-      crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
-    }
-  }
-  return (crc ^ 0xffffffff) >>> 0;
-}
-
-function pushUint16(bytes: number[], value: number): void {
-  bytes.push(value & 0xff, (value >>> 8) & 0xff);
-}
-
-function pushUint32(bytes: number[], value: number): void {
-  bytes.push(value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff);
-}
-
-function createZip(entries: Array<{ name: string; content: string }>): Uint8Array {
-  const encoder = new TextEncoder();
-  const output: number[] = [];
-  const central: number[] = [];
-
-  for (const entry of entries) {
-    const name = encoder.encode(entry.name);
-    const content = encoder.encode(entry.content);
-    const checksum = crc32(content);
-    const offset = output.length;
-
-    pushUint32(output, 0x04034b50);
-    pushUint16(output, 20);
-    pushUint16(output, 0);
-    pushUint16(output, 0);
-    pushUint16(output, 0);
-    pushUint16(output, 0);
-    pushUint32(output, checksum);
-    pushUint32(output, content.length);
-    pushUint32(output, content.length);
-    pushUint16(output, name.length);
-    pushUint16(output, 0);
-    output.push(...name, ...content);
-
-    pushUint32(central, 0x02014b50);
-    pushUint16(central, 20);
-    pushUint16(central, 20);
-    pushUint16(central, 0);
-    pushUint16(central, 0);
-    pushUint16(central, 0);
-    pushUint16(central, 0);
-    pushUint32(central, checksum);
-    pushUint32(central, content.length);
-    pushUint32(central, content.length);
-    pushUint16(central, name.length);
-    pushUint16(central, 0);
-    pushUint16(central, 0);
-    pushUint16(central, 0);
-    pushUint16(central, 0);
-    pushUint32(central, 0);
-    pushUint32(central, offset);
-    central.push(...name);
-  }
-
-  const centralOffset = output.length;
-  output.push(...central);
-  pushUint32(output, 0x06054b50);
-  pushUint16(output, 0);
-  pushUint16(output, 0);
-  pushUint16(output, entries.length);
-  pushUint16(output, entries.length);
-  pushUint32(output, central.length);
-  pushUint32(output, centralOffset);
-  pushUint16(output, 0);
-
-  return new Uint8Array(output);
 }
 
 function docxTextParagraph(text: string, heading?: (typeof HeadingLevel)[keyof typeof HeadingLevel]): Paragraph {

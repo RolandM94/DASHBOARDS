@@ -89,9 +89,8 @@ async function runConcurrent(baseUrl, route, count) {
   };
 }
 
-async function runSignupSmoke(baseUrl) {
+async function runSignupSmoke() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!url || !serviceRoleKey) {
@@ -259,7 +258,7 @@ async function main() {
     );
   }
 
-  const signup = await runSignupSmoke(baseUrl);
+  const signup = await runSignupSmoke();
   if (signup.skipped) {
     console.log(`SKIP signup: ${signup.reason}`);
   } else {

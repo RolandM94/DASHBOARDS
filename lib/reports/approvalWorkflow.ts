@@ -9,7 +9,6 @@ import {
   roleHasReportPermission,
   targetStatusForWorkflowAction,
   type ReportPermission,
-  type ReportWorkflowAction,
 } from "@/lib/reports/approvalWorkflowCore";
 import type { ReportProject, ReportProjectStatus } from "@/types";
 
