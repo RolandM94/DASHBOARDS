@@ -20,6 +20,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useSavedDashboard } from "@/hooks/useSavedDashboard";
+import { NLQueryBar } from "@/components/analytics/dashboard/NLQueryBar";
 
 const GridLayout = WidthProvider(ReactGridLayout);
 const ROW_HEIGHT = 30;
@@ -633,7 +634,7 @@ export function DashboardView({ dashboard, initialWidgetData }: Props) {
   const [activeSmartFilters, setActiveSmartFilters] = useState<ActiveSmartFilters>([]);
   const [copied, setCopied] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const [user, setUser] = useState<unknown>(null);
+  const [authenticated, setAuthenticated] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
   const router = useRouter();
   const { saved, loading: saveLoading, toggle } = useSavedDashboard(dashboard.id);
@@ -641,12 +642,12 @@ export function DashboardView({ dashboard, initialWidgetData }: Props) {
   useEffect(() => {
     const supabase = createClient();
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
+      setAuthenticated(!!session?.user);
     });
   }, []);
 
   function handleSave() {
-    if (!user) {
+    if (!authenticated) {
       router.push(`/login?redirect=/dashboard/${dashboard.id}`);
     } else {
       toggle();
@@ -833,7 +834,7 @@ export function DashboardView({ dashboard, initialWidgetData }: Props) {
                 Clear filters
               </Button>
             )}
-            {!user && (
+            {!authenticated && (
               <>
                 <Link href={`/login?redirect=/dashboard/${dashboard.id}`}>
                   <Button variant="ghost" size="sm" className="gap-1.5 text-xs h-8 px-2.5 sm:px-3">
@@ -846,6 +847,14 @@ export function DashboardView({ dashboard, initialWidgetData }: Props) {
                   </Button>
                 </Link>
               </>
+            )}
+            {authenticated && (
+              <NLQueryBar
+                datasetIds={datasetIds}
+                onResult={({ chartData, title, chartType }) => {
+                  // Future: display inline chart result
+                }}
+              />
             )}
             <Button variant="outline" size="sm" onClick={handleSave} disabled={saveLoading} className="gap-1.5 text-xs h-8 px-2.5 sm:px-3">
               <Bookmark className={`h-3.5 w-3.5 ${saved ? "fill-current" : ""}`} />
