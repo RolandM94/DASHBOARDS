@@ -116,6 +116,7 @@ interface Props {
   chartType: ChartType;
   height?: number;
   logScale?: boolean;
+  onDrillDown?: (row: ChartDataPoint) => void;
 }
 
 function ScrollableChart({
@@ -329,9 +330,9 @@ function PieActiveShape({
 }
 
 function PieChartRenderer({
-  data, xKey, yKeys, height,
+  data, xKey, yKeys, height, onDrillDown,
 }: {
-  data: ChartDataPoint[]; xKey: string; yKeys: string[]; height: number;
+  data: ChartDataPoint[]; xKey: string; yKeys: string[]; height: number; onDrillDown?: (row: ChartDataPoint) => void;
 }) {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
 
@@ -340,6 +341,7 @@ function PieChartRenderer({
       name: String(d[xKey] ?? ""),
       value: Number(d[yKeys[0]]),
       fill: COLORS[i % COLORS.length],
+      row: d,
     }))
     .filter((d) => isFinite(d.value) && d.value > 0)
     .sort((a, b) => b.value - a.value);
@@ -377,6 +379,11 @@ function PieChartRenderer({
             activeShape={PieActiveShape}
             onMouseEnter={(_, i) => setActiveIndex(i)}
             onMouseLeave={() => setActiveIndex(null)}
+            onClick={(slice) => {
+              const row = (slice as { row?: ChartDataPoint })?.row;
+              if (row) onDrillDown?.(row);
+            }}
+            cursor={onDrillDown ? "pointer" : "default"}
           />
           <Tooltip
             {...TOOLTIP_STYLE}
@@ -434,6 +441,7 @@ function PieChartRenderer({
                 )}
                 onMouseEnter={() => setActiveIndex(i)}
                 onMouseLeave={() => setActiveIndex(null)}
+                onClick={() => onDrillDown?.(slice.row)}
               >
                 <span
                   className="shrink-0 rounded-sm"
@@ -453,7 +461,7 @@ function PieChartRenderer({
   );
 }
 
-export function ChartRenderer({ chartData, chartType, height = 320, logScale = false }: Props) {
+export function ChartRenderer({ chartData, chartType, height = 320, logScale = false, onDrillDown }: Props) {
   const { xKey, yKeys } = chartData;
   const { clampedData, domainMin, domainMax } = logScale
     ? prepareLogData(chartData.data, yKeys)
@@ -530,7 +538,11 @@ export function ChartRenderer({ chartData, chartType, height = 320, logScale = f
           </thead>
           <tbody>
             {data.slice(0, 200).map((row: ChartDataPoint, i: number) => (
-              <tr key={i} className={`border-b transition-colors hover:bg-brand-tint-100/40 ${i % 2 === 0 ? "bg-white" : "bg-slate-50/50"}`}>
+              <tr
+                key={i}
+                className={`border-b transition-colors hover:bg-brand-tint-100/40 ${onDrillDown ? "cursor-pointer" : ""} ${i % 2 === 0 ? "bg-white" : "bg-slate-50/50"}`}
+                onClick={() => onDrillDown?.(row)}
+              >
                 {cols.map((c) => (
                   <td key={c} className="px-3 py-2 whitespace-nowrap text-sm text-slate-700">
                     {formatCell(row[c])}
@@ -546,7 +558,7 @@ export function ChartRenderer({ chartData, chartType, height = 320, logScale = f
 
   // ── Pie ───────────────────────────────────────────────────────────
   if (chartType === "pie") {
-    return <PieChartRenderer data={data} xKey={xKey} yKeys={yKeys} height={height} />;
+    return <PieChartRenderer data={data} xKey={xKey} yKeys={yKeys} height={height} onDrillDown={onDrillDown} />;
   }
 
   // ── Line / Area ───────────────────────────────────────────────────
@@ -580,6 +592,10 @@ export function ChartRenderer({ chartData, chartType, height = 320, logScale = f
               data={data}
               margin={chartMargin}
               style={chartStyle}
+              onClick={(event: unknown) => {
+                const row = (event as { activePayload?: Array<{ payload?: ChartDataPoint }> })?.activePayload?.[0]?.payload;
+                if (row) onDrillDown?.(row);
+              }}
             >
               {!isYAxisOnly && hasLineGroups && lineGroups!.map((group, gi) => (
                 <ReferenceArea
@@ -651,6 +667,7 @@ export function ChartRenderer({ chartData, chartType, height = 320, logScale = f
                   strokeWidth={2.5}
                   dot={data.length <= 30 ? { r: 3, strokeWidth: 0 } : false}
                   activeDot={{ r: 5, strokeWidth: 0 }}
+                  cursor={onDrillDown ? "pointer" : undefined}
                 />
               ))}
             </Component>
@@ -758,6 +775,11 @@ export function ChartRenderer({ chartData, chartType, height = 320, logScale = f
                 fill={singleSeries ? COLORS[0] : COLORS[i % COLORS.length]}
                 shape={singleSeries ? makeCategoricalBarShape(null) : makeCategoricalBarShape(COLORS[i % COLORS.length])}
                 maxBarSize={64}
+                onClick={(event) => {
+                  const row = (event as { payload?: ChartDataPoint })?.payload;
+                  if (row) onDrillDown?.(row);
+                }}
+                cursor={onDrillDown ? "pointer" : undefined}
               />
             ))}
           </BarChart>

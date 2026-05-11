@@ -21,6 +21,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useSavedDashboard } from "@/hooks/useSavedDashboard";
 import { NLQueryBar } from "@/components/analytics/dashboard/NLQueryBar";
+import { DrillDownPanel, type DrillDownRequest } from "@/components/analytics/dashboard/DrillDownPanel";
 
 const GridLayout = WidthProvider(ReactGridLayout);
 const ROW_HEIGHT = 30;
@@ -98,7 +99,7 @@ const permissionLabel = { private: "Private", org: "Organisation", public: "Publ
 // ── Read-only widget ──────────────────────────────────────────────
 
 function ReadOnlyWidget({
-  block, activeFilters, activeSmartFilters, dashboardId, onDataCountChange, onChartDataChange, refreshKey, initialData,
+  block, activeFilters, activeSmartFilters, dashboardId, onDataCountChange, onChartDataChange, onDrillDownRequest, refreshKey, initialData,
 }: {
   block: WidgetBlockConfig;
   activeFilters: ActiveGlobalFilters;
@@ -106,6 +107,7 @@ function ReadOnlyWidget({
   dashboardId: string;
   onDataCountChange?: (count: number) => void;
   onChartDataChange?: (data: ResolvedChartData | null) => void;
+  onDrillDownRequest?: (request: DrillDownRequest) => void;
   refreshKey?: number;
   initialData?: ResolvedChartData | null;
 }) {
@@ -212,6 +214,31 @@ function ReadOnlyWidget({
     onChartDataChange?.(chartData);
   }, [chartData, onChartDataChange]);
 
+  function handleDrillDown(row: ResolvedChartData["data"][number]) {
+    if (!dataset || !sheet || sheet.dimensions.length === 0) return;
+    const dimensionValues = Object.fromEntries(
+      sheet.dimensions.map((dimension) => [dimension.field, row[dimension.label]])
+    );
+    const { cleanGlobalFilters, extraFilters } = splitFiltersForApi(activeFilters);
+    const summary = Object.entries(dimensionValues)
+      .map(([field, value]) => `${field} = ${String(value ?? "")}`)
+      .join(", ");
+
+    onDrillDownRequest?.({
+      datasetId: dataset.id,
+      title: summary ? `Rows for ${summary}` : "Detail rows",
+      payload: {
+        dashboardId,
+        dimensionValues,
+        worksheetFilters: [...(sheet.filters ?? []), ...extraFilters],
+        globalFilters: cleanGlobalFilters,
+        smartFilters: activeSmartFilters,
+        limit: 50,
+        offset: 0,
+      },
+    });
+  }
+
   if (!worksheet) return (
     <div className="flex items-center justify-center h-full text-sm text-muted-foreground px-4">
       Data source not available
@@ -252,6 +279,7 @@ function ReadOnlyWidget({
             chartType={sheet.chartType}
             height={Math.max(h - 4, 80)}
             logScale={sheet.logScale}
+            onDrillDown={sheet.dimensions.length > 0 ? handleDrillDown : undefined}
           />
         )}
       </AutoSizer>
@@ -384,6 +412,7 @@ function ReadOnlyWidgetCard({
   const [dataCount, setDataCount]       = useState<number | null>(null);
   const [refreshKey, setRefreshKey]     = useState(0);
   const [widgetData, setWidgetData]     = useState<ResolvedChartData | null>(null);
+  const [drillRequest, setDrillRequest] = useState<DrillDownRequest | null>(null);
   const [explanation, setExplanation]   = useState<string | null>(null);
   const [explaining, setExplaining]     = useState(false);
   const [showExplanation, setShowExplanation] = useState(false);
@@ -425,10 +454,11 @@ function ReadOnlyWidgetCard({
   );
 
   return (
-    <div
-      className="h-full flex flex-col bg-white rounded-xl border border-gray-100 overflow-hidden"
-      style={{ boxShadow: CARD_SHADOW }}
-    >
+    <>
+      <div
+        className="h-full flex flex-col bg-white rounded-xl border border-gray-100 overflow-hidden"
+        style={{ boxShadow: CARD_SHADOW }}
+      >
       {/* Card header */}
       <div className="px-4 pt-3.5 pb-2.5 shrink-0">
         <div className="flex items-start gap-2">
@@ -523,11 +553,14 @@ function ReadOnlyWidgetCard({
           dashboardId={dashboardId}
           onDataCountChange={setDataCount}
           onChartDataChange={setWidgetData}
+          onDrillDownRequest={setDrillRequest}
           refreshKey={refreshKey}
           initialData={initialData}
         />
       </div>
-    </div>
+      </div>
+      <DrillDownPanel request={drillRequest} onClose={() => setDrillRequest(null)} />
+    </>
   );
 }
 

@@ -72,13 +72,15 @@ export interface Dataset {
 
 // ─── Worksheet config ─────────────────────────────────────────────
 
-export type AggregationFn = "SUM" | "COUNT" | "AVG" | "MIN" | "MAX";
+export type AggregationFn = "SUM" | "COUNT" | "AVG" | "MIN" | "MAX" | "CALCULATED";
 
 export interface Metric {
   id: string;
   field: string;
   aggregation: AggregationFn;
   label: string;
+  /** Formula for CALCULATED metrics. References existing metric labels as {Label}. */
+  formula?: string;
   /** Carried through to aggregate_dataset so integer AVG can be rounded. */
   fieldType?: FieldType;
 }

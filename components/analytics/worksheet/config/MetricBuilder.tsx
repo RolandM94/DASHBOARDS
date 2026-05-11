@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Plus, X } from "lucide-react";
 import { generateId } from "@/lib/utils/ids";
 
-const AGG_FNS: AggregationFn[] = ["COUNT", "SUM", "AVG", "MIN", "MAX"];
+const BASE_AGG_FNS: AggregationFn[] = ["COUNT", "SUM", "AVG", "MIN", "MAX"];
 
 interface Props {
   metrics: Metric[];
@@ -71,7 +71,7 @@ export function MetricBuilder({ metrics, fields, onChange }: Props) {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {AGG_FNS.map((fn) => <SelectItem key={fn} value={fn} className="text-xs">{fn}</SelectItem>)}
+                {BASE_AGG_FNS.map((fn) => <SelectItem key={fn} value={fn} className="text-xs">{fn}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={m.field} onValueChange={(v) => v && update(m.id, { field: v })}>

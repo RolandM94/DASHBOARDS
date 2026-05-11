@@ -7,12 +7,13 @@ import {
 import { ChartTypeSelector } from "../config/ChartTypeSelector";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { X, Plus, Hash, Type, Calendar, ChevronDown, ChevronUp, TrendingUp, ArrowUpDown, ToggleLeft } from "lucide-react";
+import { X, Plus, Hash, Type, Calendar, ChevronDown, ChevronUp, TrendingUp, ArrowUpDown, ToggleLeft, Calculator, Check } from "lucide-react";
 import { generateId } from "@/lib/utils/ids";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
+import { validateFormula, evaluateFormula } from "@/lib/data/formulaEvaluator";
 
-const AGG_FNS: AggregationFn[] = ["COUNT", "SUM", "AVG", "MIN", "MAX"];
+const BASE_AGG_FNS: AggregationFn[] = ["COUNT", "SUM", "AVG", "MIN", "MAX"];
 
 const typeIcon: Record<string, React.ComponentType<{ className?: string }>> = {
   integer:  Hash,
@@ -118,6 +119,35 @@ function MetricRow({
   onUpdate: (patch: Partial<Metric>) => void;
   onRemove: () => void;
 }) {
+  if (metric.aggregation === "CALCULATED") {
+    return (
+      <div className="rounded-lg border border-brand-tint-200 bg-brand-tint-100/60 p-2">
+        <div className="flex items-start gap-2">
+          <div className="mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-white text-brand-deep">
+            <Calculator className="h-3.5 w-3.5" />
+          </div>
+          <div className="min-w-0 flex-1 space-y-1">
+            <input
+              value={metric.label}
+              onChange={(e) => onUpdate({ label: e.target.value })}
+              placeholder="Calculated label"
+              className="h-6 w-full truncate border-0 bg-transparent text-[11px] font-semibold text-brand-deep outline-none placeholder:text-brand-deep/40"
+            />
+            <input
+              value={metric.formula ?? ""}
+              onChange={(e) => onUpdate({ formula: e.target.value })}
+              placeholder="{Metric A} / {Metric B}"
+              className="h-6 w-full truncate rounded border border-brand-tint-300 bg-white px-2 font-mono text-[10px] text-slate-700 outline-none focus:border-brand"
+            />
+          </div>
+          <button onClick={onRemove} className="mt-1 shrink-0 text-brand-deep/50 transition-opacity hover:text-brand-deep">
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-lg border border-slate-100 bg-white p-2">
       <div className="flex items-center gap-1.5">
@@ -138,7 +168,7 @@ function MetricRow({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {AGG_FNS.map((fn) => <SelectItem key={fn} value={fn} className="text-xs">{fn}</SelectItem>)}
+            {BASE_AGG_FNS.map((fn) => <SelectItem key={fn} value={fn} className="text-xs">{fn}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
@@ -190,6 +220,9 @@ export function ConfigPanel({
   onTitleChange, onDescriptionChange, onChange,
 }: Props) {
   const ax = axisLabels(config.chartType);
+  const [calcOpen, setCalcOpen] = useState(false);
+  const [calcLabel, setCalcLabel] = useState("");
+  const [calcFormula, setCalcFormula] = useState("");
 
   function removeDimension(id: string) {
     onChange({ ...config, dimensions: config.dimensions.filter((d) => d.id !== id) });
@@ -209,6 +242,33 @@ export function ConfigPanel({
   }
   function removeMetric(id: string) {
     onChange({ ...config, metrics: config.metrics.filter((m) => m.id !== id) });
+  }
+
+  const availableMetricLabels = config.metrics
+    .filter((metric) => metric.aggregation !== "CALCULATED")
+    .map((metric) => metric.label)
+    .filter(Boolean);
+  const calcValidation = calcFormula.trim()
+    ? validateFormula(calcFormula, availableMetricLabels)
+    : { ok: false, error: "Formula is required", references: [] };
+  const calcPreview = calcValidation.ok
+    ? evaluateFormula(calcFormula, Object.fromEntries(availableMetricLabels.map((label, index) => [label, (index + 1) * 1000])))
+    : null;
+
+  function addCalculatedMetric() {
+    const label = calcLabel.trim();
+    if (!label || !calcValidation.ok) return;
+    const metric: Metric = {
+      id: generateId(),
+      field: label,
+      aggregation: "CALCULATED",
+      label,
+      formula: calcFormula.trim(),
+    };
+    onChange({ ...config, metrics: [...config.metrics, metric] });
+    setCalcLabel("");
+    setCalcFormula("");
+    setCalcOpen(false);
   }
 
   return (
@@ -298,6 +358,68 @@ export function ConfigPanel({
                   onRemove={() => removeMetric(m.id)}
                 />
               ))}
+              {calcOpen ? (
+                <div className="rounded-lg border border-dashed border-brand-tint-400 bg-brand-tint-100/40 p-2.5">
+                  <div className="mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-brand-deep">
+                    <Calculator className="h-3.5 w-3.5" />
+                    Calculated metric
+                  </div>
+                  <div className="space-y-2">
+                    <Input
+                      value={calcLabel}
+                      onChange={(event) => setCalcLabel(event.target.value)}
+                      placeholder="Profit Margin"
+                      className="h-7 text-xs"
+                    />
+                    <Input
+                      value={calcFormula}
+                      onChange={(event) => setCalcFormula(event.target.value)}
+                      placeholder="{Total Revenue} - {Total Cost}"
+                      className="h-7 font-mono text-xs"
+                    />
+                    <div className="flex flex-wrap gap-1">
+                      {availableMetricLabels.map((label) => (
+                        <button
+                          key={label}
+                          type="button"
+                          className="rounded border border-brand-tint-300 bg-white px-1.5 py-0.5 text-[10px] text-brand-deep hover:bg-brand-tint-100"
+                          onClick={() => setCalcFormula((value) => `${value}${value.endsWith(" ") || value === "" ? "" : " "}{${label}}`)}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    <p className={cn("text-[10px]", calcValidation.ok ? "text-brand-deep" : "text-destructive")}>
+                      {calcValidation.ok
+                        ? `Preview with sample values: ${calcPreview == null ? "blank" : calcPreview.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+                        : calcValidation.error}
+                    </p>
+                    <div className="flex justify-end gap-1.5">
+                      <button type="button" className="h-7 rounded-md px-2 text-xs text-muted-foreground hover:bg-muted" onClick={() => setCalcOpen(false)}>
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        className="inline-flex h-7 items-center gap-1 rounded-md bg-brand px-2 text-xs font-medium text-white disabled:opacity-50"
+                        onClick={addCalculatedMetric}
+                        disabled={!calcLabel.trim() || !calcValidation.ok}
+                      >
+                        <Check className="h-3 w-3" />
+                        Save
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-brand-tint-300 bg-brand-tint-100/30 text-xs font-medium text-brand-deep transition-colors hover:bg-brand-tint-100"
+                  onClick={() => setCalcOpen(true)}
+                >
+                  <Calculator className="h-3.5 w-3.5" />
+                  Add calculated metric
+                </button>
+              )}
             </div>
           </AxisSection>
 

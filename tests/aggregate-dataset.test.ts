@@ -50,3 +50,38 @@ test("invalidateDatasetCache removes entries keyed by aggregate rpc dataset id",
   invalidateDatasetCache("dataset-1");
   assert.equal(getCached(key), undefined);
 });
+
+test("aggregateDataset applies calculated metrics after base aggregation", async () => {
+  const serviceClient = {
+    async rpc(_name: string, params: Record<string, unknown>) {
+      const metrics = params.p_metrics as Array<Record<string, unknown>>;
+      assert.equal(metrics.length, 2);
+      assert.equal(metrics.some((metric) => metric.aggregation === "CALCULATED"), false);
+      return {
+        data: [
+          { Region: "North", Revenue: 1000, Cost: 400 },
+          { Region: "South", Revenue: 0, Cost: 50 },
+        ],
+        error: null,
+      };
+    },
+  };
+
+  const result = await aggregateDataset(serviceClient as never, {
+    datasetId: "dataset-2",
+    datasetFields: [
+      { name: "revenue", type: "decimal", sample: ["100"] },
+      { name: "cost", type: "decimal", sample: ["40"] },
+    ],
+    dimensions: [{ id: "d1", field: "region", label: "Region" }],
+    metrics: [
+      { id: "m1", field: "revenue", aggregation: "SUM", label: "Revenue" },
+      { id: "m2", field: "cost", aggregation: "SUM", label: "Cost" },
+      { id: "m3", field: "Margin", aggregation: "CALCULATED", label: "Margin", formula: "({Revenue} - {Cost}) / {Revenue} * 100" },
+    ],
+  });
+
+  assert.deepEqual(result.yKeys, ["Revenue", "Cost", "Margin"]);
+  assert.equal(result.data[0].Margin, 60);
+  assert.equal(result.data[1].Margin, null);
+});

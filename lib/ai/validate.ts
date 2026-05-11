@@ -77,11 +77,12 @@ export function sanitiseConfig(
     .filter((m: { field?: string }) => m?.field && fieldNames.has(m.field))
     .map((m: { id?: string; field: string; aggregation?: string; label?: string }) => {
       const agg = String(m.aggregation ?? "").toUpperCase() as AggregationFn;
+      const safeAgg = VALID_AGG_FNS.has(agg) ? agg : "SUM";
       return {
         id:          m.id ?? `m${Math.random().toString(36).slice(2, 6)}`,
         field:       m.field,
-        aggregation: VALID_AGG_FNS.has(agg) ? agg : "SUM",
-        label:       m.label ?? `${agg} of ${m.field}`,
+        aggregation: safeAgg,
+        label:       m.label ?? `${safeAgg} of ${m.field}`,
       };
     });
 

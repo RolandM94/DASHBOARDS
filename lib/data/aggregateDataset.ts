@@ -11,6 +11,7 @@ import { isNumericType } from "@/types";
 import { resolveSmartFilter } from "@/lib/data/smart-filters";
 import type { createClient, createServiceClient } from "@/lib/supabase/server";
 import { buildCacheKey, getCached, setCache } from "@/lib/data/aggregateCache";
+import { evaluateFormula } from "@/lib/data/formulaEvaluator";
 
 type SupabaseClient = Awaited<ReturnType<typeof createClient>>;
 type ServiceClient = Awaited<ReturnType<typeof createServiceClient>>;
@@ -56,8 +57,10 @@ export async function aggregateDataset(
     datasetFields = (dsData?.fields ?? []) as DatasetField[];
   }
   const fieldTypeMap = Object.fromEntries(datasetFields.map((f) => [f.name, f.type]));
+  const baseMetrics = metrics.filter((metric) => metric.aggregation !== "CALCULATED");
+  const calculatedMetrics = metrics.filter((metric) => metric.aggregation === "CALCULATED" && metric.formula?.trim());
 
-  const enrichedMetrics: Metric[] = metrics.map((m) => ({
+  const enrichedMetrics: Metric[] = baseMetrics.map((m) => ({
     ...m,
     fieldType: m.fieldType ?? fieldTypeMap[m.field],
   }));
@@ -110,7 +113,7 @@ export async function aggregateDataset(
     }
   }
 
-  const yKeys = enrichedMetrics.map((metric) => metric.label);
+  const yKeys = [...enrichedMetrics.map((metric) => metric.label), ...calculatedMetrics.map((metric) => metric.label)];
   const xKey = dimensions.length === 0
     ? "_label"
     : dimensions.length === 1
@@ -127,6 +130,12 @@ export async function aggregateDataset(
     }));
   } else {
     chartData = rows;
+  }
+
+  for (const metric of calculatedMetrics) {
+    for (const row of chartData) {
+      row[metric.label] = evaluateFormula(metric.formula!, row);
+    }
   }
 
   const result: ResolvedChartData = {
