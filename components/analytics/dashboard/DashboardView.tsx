@@ -13,7 +13,7 @@ import { getCanvasFields, getFieldWidgetCounts, splitFiltersForApi, encodeFilter
 import { getWorkbookSheet } from "@/lib/workbook";
 import { ChartRenderer } from "@/components/shared/charts/ChartRenderer";
 import { Button } from "@/components/ui/button";
-import { Globe, Lock, Building2, Link2, Check, BarChart2, Loader2, Info, RefreshCw, X, FileDown, Sheet, Sparkles, FileText, ArrowLeft, Bookmark } from "lucide-react";
+import { Globe, Lock, Building2, Link2, Check, BarChart2, Loader2, Info, RefreshCw, X, FileDown, Sheet, Sparkles, FileText, ArrowLeft, Bookmark, CalendarClock, MessageSquare, Send } from "lucide-react";
 import { exportAsXLSX } from "@/lib/utils/export";
 import { ReactGridLayout, WidthProvider } from "react-grid-layout/legacy";
 import Link from "next/link";
@@ -22,6 +22,9 @@ import { createClient } from "@/lib/supabase/client";
 import { useSavedDashboard } from "@/hooks/useSavedDashboard";
 import { NLQueryBar } from "@/components/analytics/dashboard/NLQueryBar";
 import { DrillDownPanel, type DrillDownRequest } from "@/components/analytics/dashboard/DrillDownPanel";
+import { ScheduleModal } from "@/components/analytics/dashboard/ScheduleModal";
+import { SlackSetupModal, type SlackIntegrationState } from "@/components/analytics/dashboard/SlackSetupModal";
+import { toast } from "@/lib/toast";
 
 const GridLayout = WidthProvider(ReactGridLayout);
 const ROW_HEIGHT = 30;
@@ -679,6 +682,10 @@ export function DashboardView({ dashboard, initialWidgetData }: Props) {
   const [mounted, setMounted] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [slackOpen, setSlackOpen] = useState(false);
+  const [slackIntegration, setSlackIntegration] = useState<SlackIntegrationState | null>(null);
+  const [sharingSlack, setSharingSlack] = useState(false);
   const router = useRouter();
   const { saved, loading: saveLoading, toggle } = useSavedDashboard(dashboard.id);
 
@@ -688,6 +695,19 @@ export function DashboardView({ dashboard, initialWidgetData }: Props) {
       setAuthenticated(!!session?.user);
     });
   }, []);
+
+  useEffect(() => {
+    if (!authenticated) return;
+    fetch(`/api/dashboards/${dashboard.id}/slack`)
+      .then(async (response) => {
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(body.error ?? "Could not load Slack integration");
+        setSlackIntegration(body.integration ?? null);
+      })
+      .catch(() => {
+        setSlackIntegration(null);
+      });
+  }, [authenticated, dashboard.id]);
 
   function handleSave() {
     if (!authenticated) {
@@ -820,6 +840,25 @@ export function DashboardView({ dashboard, initialWidgetData }: Props) {
     }
   }
 
+  async function shareToSlack() {
+    if (!slackIntegration) {
+      setSlackOpen(true);
+      return;
+    }
+    setSharingSlack(true);
+    try {
+      const response = await fetch(`/api/dashboards/${dashboard.id}/share/slack`, { method: "POST" });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error ?? "Could not share to Slack");
+      setSlackIntegration((current) => current ? { ...current, lastSharedAt: body.lastSharedAt ?? current.lastSharedAt } : current);
+      toast.success("Dashboard shared to Slack");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not share to Slack");
+    } finally {
+      setSharingSlack(false);
+    }
+  }
+
   const PermIcon = permissionIcon[dashboard.permission];
   const hasActiveFilters = Object.values(activeFilters).some(hasActiveFilterValue) || activeSmartFilters.length > 0;
 
@@ -907,6 +946,23 @@ export function DashboardView({ dashboard, initialWidgetData }: Props) {
               {exportingPdf ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileDown className="h-3.5 w-3.5" />}
               <span className="hidden sm:inline">{exportingPdf ? "Exporting…" : "Export PDF"}</span>
             </Button>
+            {authenticated && (
+              <Button variant="outline" size="sm" onClick={() => setScheduleOpen(true)} className="gap-1.5 text-xs h-8 px-2.5 sm:px-3">
+                <CalendarClock className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Schedule</span>
+              </Button>
+            )}
+            {authenticated && (
+              <>
+                <Button variant="outline" size="sm" onClick={shareToSlack} disabled={sharingSlack} className="gap-1.5 text-xs h-8 px-2.5 sm:px-3">
+                  {sharingSlack ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                  <span className="hidden sm:inline">{slackIntegration ? "Slack" : "Add Slack"}</span>
+                </Button>
+                <Button variant="ghost" size="icon-sm" onClick={() => setSlackOpen(true)} title="Slack settings">
+                  <MessageSquare className="h-3.5 w-3.5" />
+                </Button>
+              </>
+            )}
             <Link href={`/home/reports?sourceType=dashboard&sourceId=${dashboard.id}`}>
               <Button variant="outline" size="sm" className="gap-1.5 text-xs h-8 px-2.5 sm:px-3">
                 <FileText className="h-3.5 w-3.5" />
@@ -999,6 +1055,22 @@ export function DashboardView({ dashboard, initialWidgetData }: Props) {
           Browse dashboard templates
         </Link>
       </div>
+
+      {authenticated && (
+        <ScheduleModal
+          dashboardId={dashboard.id}
+          open={scheduleOpen}
+          onOpenChange={setScheduleOpen}
+        />
+      )}
+      {authenticated && (
+        <SlackSetupModal
+          dashboardId={dashboard.id}
+          open={slackOpen}
+          onOpenChange={setSlackOpen}
+          onIntegrationChange={setSlackIntegration}
+        />
+      )}
 
     </div>
   );

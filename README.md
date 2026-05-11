@@ -36,6 +36,26 @@ SMOKE_BROWSER_SIGNUP=1 npm run smoke:prod
 
 Use that version sparingly because Supabase can rate-limit repeated signup emails.
 
+## Scheduled Dashboard Delivery
+
+Scheduled dashboard email delivery needs these production environment variables:
+
+```bash
+CRON_SECRET= # shared secret for /api/cron/process-schedules
+RESEND_API_KEY= # Resend API key used to send scheduled emails
+RESEND_FROM_EMAIL="Supercoolstuff <reports@your-domain.com>" # recommended
+NEXT_PUBLIC_APP_URL=https://supercool-stuff.vercel.app
+```
+
+`CRON_SECRET` should be sent by the external cron provider as either
+`Authorization: Bearer <secret>` or `x-cron-secret: <secret>`.
+
+The cron URL is:
+
+```text
+https://supercool-stuff.vercel.app/api/cron/process-schedules
+```
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
