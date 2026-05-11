@@ -125,6 +125,11 @@ export default function LoginPage() {
             Create one
           </Link>
         </p>
+        <p className="mt-3 text-center">
+          <Link href="/templates" className="text-sm text-muted-foreground transition-colors hover:text-brand">
+            Browse templates →
+          </Link>
+        </p>
       </div>
     </div>
   );

@@ -957,11 +957,14 @@ export function DashboardView({ dashboard, initialWidgetData }: Props) {
       </div>
 
       {/* ── Footer ── */}
-      <div className="max-w-7xl mx-auto w-full px-6 py-6 flex items-center justify-center print:hidden">
+      <div className="max-w-7xl mx-auto w-full px-6 py-6 flex flex-col items-center justify-center gap-1.5 print:hidden">
         <p className="text-[11px] text-muted-foreground/40 flex items-center gap-1.5">
           <BarChart2 className="h-3 w-3" />
           Powered by Supercoolstuff
         </p>
+        <Link href="/templates" className="text-[11px] text-muted-foreground/40 transition-colors hover:text-brand">
+          Browse dashboard templates
+        </Link>
       </div>
 
     </div>

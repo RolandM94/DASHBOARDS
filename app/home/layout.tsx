@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 
 // ── Nav link ──────────────────────────────────────────────────────
 
@@ -335,6 +336,7 @@ export default function AnalyticsLayout({ children }: { children: React.ReactNod
               </div>
             )}
             <TourLauncher collapsed={collapsed} />
+            <ThemeToggle collapsed={collapsed} />
             <button
               onClick={handleSignOut}
               className={cn(

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Supercoolstuff">
+  <rect width="512" height="512" fill="#4BAA73"/>
+  <circle cx="256" cy="256" r="196" fill="#357951"/>
+  <rect x="140" y="282" width="48" height="108" rx="15" fill="#FFFFFF" opacity="0.94"/>
+  <rect x="232" y="184" width="48" height="206" rx="15" fill="#FFFFFF" opacity="0.94"/>
+  <rect x="324" y="116" width="48" height="274" rx="15" fill="#FFFFFF" opacity="0.94"/>
+  <path d="M140 232h48M232 134h48M324 66h48" stroke="#FFCC00" stroke-width="30" stroke-linecap="round"/>
+</svg>

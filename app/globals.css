@@ -229,6 +229,73 @@
   --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.1);
 }
 
+.dark {
+  color-scheme: dark;
+
+  --background:           #101814;
+  --foreground:           #F7FAF8;
+  --card:                 #151F1A;
+  --card-foreground:      #F7FAF8;
+  --popover:              #151F1A;
+  --popover-foreground:   #F7FAF8;
+  --primary:              #6EBB8E;
+  --primary-foreground:   #0B1510;
+  --secondary:            #1D2A23;
+  --secondary-foreground: #EAF5EE;
+  --muted:                #1D2A23;
+  --muted-foreground:     #9FB4A8;
+  --accent:               #203D2D;
+  --accent-foreground:    #D7F4E3;
+  --destructive:          #FF6B7A;
+  --border:               #22352B;
+  --input:                #2B4033;
+  --ring:                 #86C6A1;
+
+  --sidebar:                    #0F1713;
+  --sidebar-foreground:         #EAF5EE;
+  --sidebar-primary:            #6EBB8E;
+  --sidebar-primary-foreground: #0B1510;
+  --sidebar-accent:             #1D2A23;
+  --sidebar-accent-foreground:  #D7F4E3;
+  --sidebar-border:             #22352B;
+  --sidebar-ring:               #86C6A1;
+
+  --green-core:      #6EBB8E;
+  --green-light:     #86C6A1;
+  --green-muted:     #ACD8BE;
+  --green-mid-dark:  #4BAA73;
+  --green-deep:      #D7F4E3;
+  --green-darkest:   #EAF5EE;
+  --green-tint-100:  #15251C;
+  --green-tint-200:  #1A2D22;
+  --green-tint-300:  #203D2D;
+  --green-tint-400:  #2B503B;
+  --green-tint-500:  #38664B;
+
+  --gold-primary:   #FFCC00;
+  --gold-amber:     #F9C466;
+  --gold-orange:    #FFB300;
+  --gold-dark:      #FDE68A;
+  --gold-light:     #FFF1B8;
+  --gold-warm-bg:   #221D10;
+
+  --text-primary:   #F7FAF8;
+  --text-navy:      #D7F4E3;
+  --grey-body:      #CBD5CE;
+  --grey-muted:     #9FB4A8;
+  --grey-disabled:  #64766C;
+  --border-standard:#22352B;
+  --border-light:   #2B4033;
+  --bg-white:       #151F1A;
+  --bg-offwhite:    #101814;
+  --bg-light:       #1D2A23;
+  --bg-card:        #151F1A;
+
+  --shadow-card:    0 1px 3px rgba(0, 0, 0, 0.35);
+  --shadow-hover:   0 8px 25px rgba(0, 0, 0, 0.42);
+  --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.48);
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
