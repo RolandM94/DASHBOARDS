@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { BarChart3 } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
-import { ThemeToggle } from "@/components/ui/theme-toggle";
 
 export default function PublicTemplatesLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -19,7 +18,6 @@ export default function PublicTemplatesLayout({ children }: { children: React.Re
             <Link href="/home" className="hidden text-sm text-muted-foreground transition-colors hover:text-foreground sm:inline">
               Open app
             </Link>
-            <ThemeToggle collapsed />
             <Link href="/login" className={buttonVariants({ variant: "ghost", size: "sm" })}>Sign in</Link>
             <Link href="/signup" className={buttonVariants({ size: "sm" })}>Sign up</Link>
           </nav>
