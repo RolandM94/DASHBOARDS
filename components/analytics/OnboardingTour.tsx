@@ -62,10 +62,24 @@ const STEPS: Step[] = [
     placement: "bottom",
   },
   {
+    target: '[data-tour-id="canvas-live-status"]',
+    title: "Work Together Live",
+    content:
+      "When collaborators open this canvas, you'll see their avatars, cursors, and editing badges here. Changes sync after autosave, while presence updates instantly.",
+    placement: "bottom",
+  },
+  {
+    target: '[data-tour-id="share-canvas-btn"]',
+    title: "Invite Collaborators",
+    content:
+      "Use Share to invite teammates as editors or viewers. Editors can update and publish the canvas; viewers can inspect it without changing anything.",
+    placement: "bottom",
+  },
+  {
     target: '[data-tour-id="publish-btn"]',
     title: "Publish to Share",
     content:
-      "Share your dashboard with your organisation or publicly. Once published, it gets a shareable link anyone can view.",
+      "Publish a dashboard link for your organisation or the public. Published dashboards show live viewer counts and can be exported or used as report sources.",
     placement: "bottom",
   },
   {
@@ -94,8 +108,10 @@ const STEP_PAGE: Record<number, string> = {
   5: "/home/canvas/new",
   6: "/home/canvas/new",
   7: "/home/canvas/new",
-  8: "/home",
-  9: "/home/reports",
+  8: "/home/canvas/new",
+  9: "/home/canvas/new",
+  10: "/home",
+  11: "/home/reports",
 };
 
 const MAX_RETRIES = 4;

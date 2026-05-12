@@ -1,21 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-
-function dbToCanvas(c: Record<string, unknown>) {
-  return {
-    id: c.id,
-    name: c.name,
-    blocks: c.blocks ?? [],
-    layout: c.layout ?? undefined,
-    published: c.published ?? false,
-    publishedTitle: c.published_title ?? undefined,
-    publishedPermission: c.published_permission ?? undefined,
-    publishedAt: c.published_at ?? undefined,
-    createdAt: c.created_at,
-    updatedAt: c.updated_at,
-  };
-}
+import { CANVAS_COLUMNS, dbToCanvas, type CanvasPermission } from "@/lib/canvas/access";
 
 // GET /api/canvases — list the current user's canvases
 export async function GET() {
@@ -25,12 +11,30 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("canvases")
-    .select("id, name, blocks, layout, published, published_title, published_permission, published_at, created_at, updated_at")
-    .eq("user_id", user.id)
+    .select(CANVAS_COLUMNS)
     .order("created_at", { ascending: false });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json((data ?? []).map(dbToCanvas));
+
+  const canvasIds = (data ?? []).map((canvas) => canvas.id);
+  const sharedPermissions: Record<string, CanvasPermission> = {};
+  if (canvasIds.length > 0) {
+    const { data: shares } = await supabase
+      .from("canvas_shares")
+      .select("canvas_id, permission")
+      .in("canvas_id", canvasIds)
+      .eq("shared_with_user_id", user.id);
+
+    for (const share of shares ?? []) {
+      if (share.permission === "editor" || share.permission === "viewer") {
+        sharedPermissions[share.canvas_id] = share.permission;
+      }
+    }
+  }
+
+  return NextResponse.json((data ?? []).map((canvas) =>
+    dbToCanvas(canvas as Record<string, unknown>, { currentUserId: user.id, sharedPermissions })
+  ));
 }
 
 // POST /api/canvases — create a new canvas
@@ -49,9 +53,9 @@ export async function POST(request: NextRequest) {
   const { data, error } = await supabase
     .from("canvases")
     .insert({ user_id: user.id, name: name.trim() })
-    .select("id, name, blocks, layout, published, published_title, published_permission, published_at, created_at, updated_at")
+    .select(CANVAS_COLUMNS)
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(dbToCanvas(data as Record<string, unknown>), { status: 201 });
+  return NextResponse.json(dbToCanvas(data as Record<string, unknown>, { currentUserId: user.id }), { status: 201 });
 }

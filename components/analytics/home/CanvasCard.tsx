@@ -5,7 +5,7 @@ import { Canvas } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { LayoutDashboard, Trash2, Globe, ExternalLink, Loader2 } from "lucide-react";
+import { LayoutDashboard, Trash2, Globe, ExternalLink, Loader2, Share2 } from "lucide-react";
 import Link from "next/link";
 import { useCanvasStore } from "@/store/canvasStore";
 import { toast } from "@/lib/toast";
@@ -25,6 +25,7 @@ export function CanvasCard({ canvas }: { canvas: Canvas }) {
   const deleteCanvas = useCanvasStore((s) => s.deleteCanvas);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const isOwner = !canvas.accessRole || canvas.accessRole === "owner";
 
   async function handleDelete() {
     setDeleting(true);
@@ -78,13 +79,15 @@ export function CanvasCard({ canvas }: { canvas: Canvas }) {
           >
             <LayoutDashboard className="h-4 w-4" style={{ color: CANVAS_COLOR }} />
           </div>
-          <button
-            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setConfirmOpen(true); }}
-            className="h-6 w-6 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all"
-            title="Delete canvas"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </button>
+          {isOwner && (
+            <button
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); setConfirmOpen(true); }}
+              className="h-6 w-6 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all"
+              title="Delete canvas"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
 
         {/* Name */}
@@ -101,6 +104,12 @@ export function CanvasCard({ canvas }: { canvas: Canvas }) {
             <Badge className="text-[10px] px-1.5 py-0 bg-green-100 text-green-700 border-green-200 font-medium">
               <Globe className="h-2.5 w-2.5 mr-0.5" />
               Published
+            </Badge>
+          )}
+          {!isOwner && canvas.accessRole && (
+            <Badge variant="secondary" className="text-[10px] px-1.5 py-0 font-medium capitalize gap-1">
+              <Share2 className="h-2.5 w-2.5" />
+              {canvas.accessRole}
             </Badge>
           )}
         </div>

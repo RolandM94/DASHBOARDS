@@ -7,14 +7,34 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import type { Canvas } from "@/types";
 
 export default function EditCanvasPage() {
   const { id } = useParams<{ id: string }>();
   const hydrated = useCanvasStore((s) => s.hydrated);
+  const addCanvas = useCanvasStore((s) => s.addCanvas);
   const canvas   = useCanvasStore((s) => s.getCanvasById(id));
+  const [loadingShared, setLoadingShared] = useState(false);
+  const [attemptedSharedLoad, setAttemptedSharedLoad] = useState(false);
+
+  useEffect(() => {
+    if (!hydrated || canvas || loadingShared || attemptedSharedLoad) return;
+    setAttemptedSharedLoad(true);
+    setLoadingShared(true);
+    fetch(`/api/canvases/${id}`)
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return await response.json() as Canvas;
+      })
+      .then((next) => {
+        if (next) addCanvas(next);
+      })
+      .finally(() => setLoadingShared(false));
+  }, [addCanvas, attemptedSharedLoad, canvas, hydrated, id, loadingShared]);
 
   // Don't show "not found" while DataLoader is still fetching
-  if (!hydrated) {
+  if (!hydrated || loadingShared) {
     return (
       <div className="h-full flex items-center justify-center">
         <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />

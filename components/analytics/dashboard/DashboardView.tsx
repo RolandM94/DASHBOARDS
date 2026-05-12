@@ -13,7 +13,7 @@ import { getCanvasFields, getFieldWidgetCounts, splitFiltersForApi, encodeFilter
 import { getWorkbookSheet } from "@/lib/workbook";
 import { ChartRenderer } from "@/components/shared/charts/ChartRenderer";
 import { Button } from "@/components/ui/button";
-import { Globe, Lock, Building2, Link2, Check, BarChart2, Loader2, Info, RefreshCw, X, FileDown, Sheet, Sparkles, FileText, ArrowLeft, Bookmark, CalendarClock, MessageSquare, Send } from "lucide-react";
+import { Globe, Lock, Building2, Link2, Check, BarChart2, Loader2, Info, RefreshCw, X, FileDown, Sheet, Sparkles, FileText, ArrowLeft, Bookmark, CalendarClock, MessageSquare, Send, Eye } from "lucide-react";
 import { exportAsXLSX } from "@/lib/utils/export";
 import { ReactGridLayout, WidthProvider } from "react-grid-layout/legacy";
 import Link from "next/link";
@@ -25,6 +25,7 @@ import { DrillDownPanel, type DrillDownRequest } from "@/components/analytics/da
 import { ScheduleModal } from "@/components/analytics/dashboard/ScheduleModal";
 import { SlackSetupModal, type SlackIntegrationState } from "@/components/analytics/dashboard/SlackSetupModal";
 import { toast } from "@/lib/toast";
+import { useDashboardViewers } from "@/lib/realtime/dashboardPresence";
 
 const GridLayout = WidthProvider(ReactGridLayout);
 const ROW_HEIGHT = 30;
@@ -688,6 +689,7 @@ export function DashboardView({ dashboard, initialWidgetData }: Props) {
   const [sharingSlack, setSharingSlack] = useState(false);
   const router = useRouter();
   const { saved, loading: saveLoading, toggle } = useSavedDashboard(dashboard.id);
+  const viewerCounts = useDashboardViewers(dashboard.id);
 
   useEffect(() => {
     const supabase = createClient();
@@ -708,6 +710,10 @@ export function DashboardView({ dashboard, initialWidgetData }: Props) {
         setSlackIntegration(null);
       });
   }, [authenticated, dashboard.id]);
+
+  useEffect(() => {
+    fetch(`/api/dashboards/${dashboard.id}/views`, { method: "POST" }).catch(() => {});
+  }, [dashboard.id]);
 
   function handleSave() {
     if (!authenticated) {
@@ -897,6 +903,15 @@ export function DashboardView({ dashboard, initialWidgetData }: Props) {
                 <span className="text-xs text-muted-foreground">
                   {new Date(dashboard.publishedAt).toLocaleDateString()}
                 </span>
+                {viewerCounts.totalViewers > 0 && (
+                  <>
+                    <span className="text-muted-foreground/40 text-xs hidden sm:inline">·</span>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-brand/10 px-2 py-0.5 text-[11px] font-medium text-brand-deep print:hidden">
+                      <Eye className="h-3 w-3" />
+                      {viewerCounts.totalViewers > 50 ? "50+" : viewerCounts.totalViewers} viewing
+                    </span>
+                  </>
+                )}
               </div>
             </div>
           </div>

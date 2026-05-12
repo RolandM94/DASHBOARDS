@@ -17,7 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { generateId } from "@/lib/utils/ids";
-import { Plus, CheckCircle2, ArrowLeft, BarChart2, Type, Trash2, Globe, Filter, GripVertical, Loader2, Info, RefreshCw, Pencil, X, Sparkles, Table2, ArrowUpDown, TrendingUp, FileText } from "lucide-react";
+import { Plus, CheckCircle2, ArrowLeft, BarChart2, Type, Trash2, Globe, Filter, GripVertical, Loader2, Info, RefreshCw, Pencil, X, Sparkles, Table2, ArrowUpDown, TrendingUp, FileText, Users } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChartRenderer } from "@/components/shared/charts/ChartRenderer";
@@ -29,6 +29,9 @@ import { PublishModal } from "./PublishModal";
 import { AIAssistantModal } from "./AIAssistantModal";
 import { getWorkbookSheet, getWorkbookSheets, normalizeWorkbookConfig } from "@/lib/workbook";
 import { toast } from "@/lib/toast";
+import { createClient } from "@/lib/supabase/client";
+import { useCanvasRealtime, type Collaborator } from "@/lib/realtime/useCanvasRealtime";
+import { ShareModal } from "./ShareModal";
 
 const GridLayout = WidthProvider(ReactGridLayout);
 
@@ -223,12 +226,12 @@ function WidgetBlockEdit({
 
 // ── Text block content ────────────────────────────────────────────
 
-function TextBlockEdit({ block, canvasId }: { block: TextBlockConfig; canvasId: string }) {
+function TextBlockEdit({ block, canvasId, canEdit }: { block: TextBlockConfig; canvasId: string; canEdit: boolean }) {
   const updateBlock = useCanvasStore((s) => s.updateBlock);
   const [refreshing, setRefreshing] = useState(false);
 
   async function handleRefreshInsight() {
-    if (!block.worksheetId) return;
+    if (!canEdit || !block.worksheetId) return;
     setRefreshing(true);
     try {
       const res = await fetch("/api/ai/explain", {
@@ -272,7 +275,11 @@ function TextBlockEdit({ block, canvasId }: { block: TextBlockConfig; canvasId: 
       <div className="flex-1 px-4 py-2">
         <textarea
           value={block.content}
-          onChange={(e) => updateBlock(canvasId, block.id, { content: e.target.value } as Partial<TextBlockConfig>)}
+          readOnly={!canEdit}
+          onChange={(e) => {
+            if (!canEdit) return;
+            updateBlock(canvasId, block.id, { content: e.target.value } as Partial<TextBlockConfig>);
+          }}
           className="w-full h-full resize-none text-sm border-none outline-none bg-transparent leading-relaxed"
           placeholder="Type your text here…"
         />
@@ -385,7 +392,7 @@ const CARD_SHADOW = "0px 0px 5px 0px rgba(0,0,0,.02), 0px 2px 10px 0px rgba(0,0,
 // ── Widget card (full-bleed header redesign) ──────────────────────
 
 function WidgetCard({
-  block, canvasId, title, activeFilters, activeSmartFilters, onFilterChange,
+  block, canvasId, title, activeFilters, activeSmartFilters, onFilterChange, editingCollaborator, canEdit,
 }: {
   block: WidgetBlockConfig;
   canvasId: string;
@@ -393,6 +400,8 @@ function WidgetCard({
   activeFilters: ActiveGlobalFilters;
   activeSmartFilters: ActiveSmartFilters;
   onFilterChange: (field: string, value: GlobalFilterValue) => void;
+  editingCollaborator?: Collaborator;
+  canEdit: boolean;
 }) {
   const removeBlock = useCanvasStore((s) => s.removeBlock);
   const addBlock    = useCanvasStore((s) => s.addBlock);
@@ -412,7 +421,7 @@ function WidgetCard({
   const supportsLogScale = sheet ? LOG_SCALE_CHART_TYPES.includes(sheet.chartType) : false;
 
   async function patchSheetConfig(patch: Partial<WorkbookSheet>) {
-    if (!ws || !sheet) return;
+    if (!canEdit || !ws || !sheet) return;
     const workbook = normalizeWorkbookConfig(ws.config, { name: ws.name, description: ws.description });
     const nextConfig = {
       ...workbook,
@@ -435,6 +444,7 @@ function WidgetCard({
   }
 
   async function handleExplain(instructions = "") {
+    if (!canEdit) return;
     setExplaining(true);
     try {
       const res  = await fetch("/api/ai/explain", {
@@ -492,12 +502,17 @@ function WidgetCard({
       <div className="rgl-drag-handle px-4 pt-3.5 pb-2.5 shrink-0 cursor-grab active:cursor-grabbing select-none">
         <div className="flex items-start gap-2">
           <h3 className="text-sm font-bold text-gray-900 leading-snug flex-1 min-w-0 break-words">{title}</h3>
+          {editingCollaborator && (
+            <span className="rounded-full bg-gray-50 px-2 py-0.5 text-[10px] font-medium shadow-sm" style={{ color: editingCollaborator.color }}>
+              {editingCollaborator.displayName} editing
+            </span>
+          )}
           {/* Icon toolbar — stops drag propagation */}
           <div
             className="flex items-center gap-0.5 shrink-0 -mt-0.5"
             onPointerDown={(e) => e.stopPropagation()}
           >
-            {sheet && sheet.chartType !== "kpi" && (
+            {canEdit && sheet && sheet.chartType !== "kpi" && (
               <>
                 <div className="flex h-6 items-center gap-1 rounded-md border border-gray-100 bg-gray-50 px-1.5">
                   <ArrowUpDown className="h-3 w-3 text-gray-400" />
@@ -557,17 +572,19 @@ function WidgetCard({
             >
               <Info className="h-3.5 w-3.5" />
             </button>
-            <button
-              className="h-6 w-6 flex items-center justify-center rounded-md text-gray-300 hover:text-brand hover:bg-brand/10 transition-all disabled:opacity-40"
-              title="Write AI insight"
-              onClick={() => setInsightPromptOpen(true)}
-              disabled={explaining}
-            >
-              {explaining
-                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                : <Sparkles className="h-3.5 w-3.5" />
-              }
-            </button>
+            {canEdit && (
+              <button
+                className="h-6 w-6 flex items-center justify-center rounded-md text-gray-300 hover:text-brand hover:bg-brand/10 transition-all disabled:opacity-40"
+                title="Write AI insight"
+                onClick={() => setInsightPromptOpen(true)}
+                disabled={explaining}
+              >
+                {explaining
+                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  : <Sparkles className="h-3.5 w-3.5" />
+                }
+              </button>
+            )}
             <button
               className="h-6 w-6 flex items-center justify-center rounded-md text-gray-300 hover:text-gray-500 hover:bg-gray-100 transition-all"
               title="Refresh data"
@@ -584,13 +601,15 @@ function WidgetCard({
                 <Pencil className="h-3.5 w-3.5" />
               </a>
             )}
-            <button
-              className="h-6 w-6 flex items-center justify-center rounded-md text-gray-300 hover:text-red-500 hover:bg-red-50 transition-all"
-              title="Remove widget"
-              onClick={() => removeBlock(canvasId, block.id)}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
+            {canEdit && (
+              <button
+                className="h-6 w-6 flex items-center justify-center rounded-md text-gray-300 hover:text-red-500 hover:bg-red-50 transition-all"
+                title="Remove widget"
+                onClick={() => removeBlock(canvasId, block.id)}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
         </div>
 
@@ -679,7 +698,7 @@ function WidgetCard({
 // ── Unified card wrapper (text + filter + preview blocks) ────────
 
 function BlockCard({
-  block, canvasId, title, activeFilters, activeSmartFilters, onFilterChange,
+  block, canvasId, title, activeFilters, activeSmartFilters, onFilterChange, editingCollaborator, canEdit,
 }: {
   block: Canvas["blocks"][number];
   canvasId: string;
@@ -687,6 +706,8 @@ function BlockCard({
   activeFilters: ActiveGlobalFilters;
   activeSmartFilters: ActiveSmartFilters;
   onFilterChange: (field: string, value: GlobalFilterValue) => void;
+  editingCollaborator?: Collaborator;
+  canEdit: boolean;
 }) {
   const removeBlock = useCanvasStore((s) => s.removeBlock);
 
@@ -699,6 +720,8 @@ function BlockCard({
         activeFilters={activeFilters}
         activeSmartFilters={activeSmartFilters}
         onFilterChange={onFilterChange}
+        editingCollaborator={editingCollaborator}
+        canEdit={canEdit}
       />
     );
   }
@@ -712,19 +735,26 @@ function BlockCard({
       <div className="rgl-drag-handle flex items-center gap-2 px-3 py-2 bg-gray-50/80 border-b border-gray-100 cursor-grab active:cursor-grabbing shrink-0 select-none">
         <GripVertical className="h-3.5 w-3.5 text-gray-300 shrink-0" />
         <p className="text-xs font-medium text-gray-500 flex-1 truncate">{title}</p>
-        <button
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={() => removeBlock(canvasId, block.id)}
-          className="h-5 w-5 flex items-center justify-center rounded opacity-40 hover:opacity-100 hover:bg-red-50 hover:text-red-500 transition-all"
-        >
-          <Trash2 className="h-3 w-3" />
-        </button>
+        {editingCollaborator && (
+          <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-medium shadow-sm" style={{ color: editingCollaborator.color }}>
+            {editingCollaborator.displayName} editing
+          </span>
+        )}
+        {canEdit && (
+          <button
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={() => removeBlock(canvasId, block.id)}
+            className="h-5 w-5 flex items-center justify-center rounded opacity-40 hover:opacity-100 hover:bg-red-50 hover:text-red-500 transition-all"
+          >
+            <Trash2 className="h-3 w-3" />
+          </button>
+        )}
       </div>
 
       {/* Content fills remaining height */}
       <div className="flex-1 min-h-0 overflow-hidden">
         {block.type === "text" && (
-          <TextBlockEdit block={block as TextBlockConfig} canvasId={canvasId} />
+          <TextBlockEdit block={block as TextBlockConfig} canvasId={canvasId} canEdit={canEdit} />
         )}
         {block.type === "filter" && (
           <FilterBlockEdit
@@ -764,6 +794,7 @@ export function CanvasBuilder({ existingCanvas }: Props) {
   const [previewDatasetId, setPreviewDatasetId] = useState("");
   const [publishOpen, setPublishOpen] = useState(false);
   const [aiOpen, setAiOpen]           = useState(false);
+  const [shareOpen, setShareOpen]     = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">(
     existingCanvas ? "saved" : "idle"
   );
@@ -772,9 +803,22 @@ export function CanvasBuilder({ existingCanvas }: Props) {
   );
   const [activeFilters, setActiveFilters] = useState<ActiveGlobalFilters>({});
   const [activeSmartFilters, setActiveSmartFilters] = useState<ActiveSmartFilters>([]);
+  const [currentUser, setCurrentUser] = useState<{ id: string; displayName: string; avatarUrl: string | null } | null>(null);
 
   // WidthProvider does a server-side pass with width=0; skip render until mounted
   const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return;
+      setCurrentUser({
+        id: user.id,
+        displayName: user.user_metadata?.full_name ?? user.email?.split("@")[0] ?? "Collaborator",
+        avatarUrl: user.user_metadata?.avatar_url ?? null,
+      });
+    });
+  }, []);
 
   // ── Restore filters from URL on first mount ───────────────────────
   useEffect(() => {
@@ -814,6 +858,20 @@ export function CanvasBuilder({ existingCanvas }: Props) {
   }, [activeFilters, activeSmartFilters, mounted]);
 
   const canvas = canvasId ? getCanvasById(canvasId) : null;
+  const accessRole = canvas?.accessRole ?? "owner";
+  const canEdit = accessRole === "owner" || accessRole === "editor";
+  const canManageShares = accessRole === "owner";
+  const {
+    collaborators,
+    isConnected: realtimeConnected,
+    broadcastCursor,
+    broadcastEditingBlock,
+  } = useCanvasRealtime({
+    canvasId,
+    userId: currentUser?.id ?? null,
+    displayName: currentUser?.displayName ?? "Collaborator",
+    avatarUrl: currentUser?.avatarUrl ?? null,
+  });
 
   // ── Auto-save canvas blocks + layout ──────────────────────────────
   // Use stable JSON keys so the effect only fires when content changes,
@@ -822,6 +880,7 @@ export function CanvasBuilder({ existingCanvas }: Props) {
   const layoutKey = canvas ? JSON.stringify(canvas.layout) : null;
   const canvasRef = useRef(canvas);
   const isCanvasFirstRender = useRef(true);
+  const consumeRemoteUpdate = useCanvasStore((s) => s.consumeRemoteUpdate);
 
   useEffect(() => {
     canvasRef.current = canvas;
@@ -833,6 +892,11 @@ export function CanvasBuilder({ existingCanvas }: Props) {
       return;
     }
     if (!canvasRef.current) return;
+    if (!canEdit) return;
+    if (consumeRemoteUpdate()) {
+      setSaveStatus("saved");
+      return;
+    }
 
     const c = canvasRef.current;
     const timer = setTimeout(async () => {
@@ -851,7 +915,27 @@ export function CanvasBuilder({ existingCanvas }: Props) {
     }, 1500);
 
     return () => clearTimeout(timer);
-  }, [blocksKey, layoutKey]);
+  }, [blocksKey, canEdit, consumeRemoteUpdate, layoutKey]);
+
+  useEffect(() => {
+    if (!canvasId) return;
+    let lastSent = 0;
+    let frame = 0;
+    function handleMove(event: MouseEvent) {
+      const now = Date.now();
+      if (now - lastSent < 200) return;
+      lastSent = now;
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        broadcastCursor(event.clientX, event.clientY);
+      });
+    }
+    window.addEventListener("mousemove", handleMove);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("mousemove", handleMove);
+    };
+  }, [broadcastCursor, canvasId]);
 
   // Resolve layout: use stored one if present, otherwise generate defaults.
   // Ensures every block has an entry even for canvases created before the grid refactor.
@@ -924,7 +1008,7 @@ export function CanvasBuilder({ existingCanvas }: Props) {
   }
 
   function handleLayoutChange(newLayout: RGLLayout) {
-    if (!canvas) return;
+    if (!canvas || !canEdit) return;
     // Persist positions/sizes; preserve our minW/minH metadata
     const merged: GridLayoutItem[] = Array.from(newLayout).map((item) => {
       const existing = layout.find((l) => l.i === item.i);
@@ -935,7 +1019,7 @@ export function CanvasBuilder({ existingCanvas }: Props) {
   }
 
   function handleAddWidget(worksheetId: string, sheetId?: string) {
-    if (!canvas) return;
+    if (!canvas || !canEdit) return;
     const block: WidgetBlockConfig = {
       id: generateId(), type: "widget", worksheetId, sheetId, order: canvas.blocks.length,
     };
@@ -944,7 +1028,7 @@ export function CanvasBuilder({ existingCanvas }: Props) {
   }
 
   function handleAddText() {
-    if (!canvas) return;
+    if (!canvas || !canEdit) return;
     const block: TextBlockConfig = {
       id: generateId(), type: "text", content: "", order: canvas.blocks.length,
     };
@@ -953,7 +1037,7 @@ export function CanvasBuilder({ existingCanvas }: Props) {
   }
 
   function handleAddFilter() {
-    if (!canvas || !filterField) return;
+    if (!canvas || !canEdit || !filterField) return;
     const field = canvasFields.find((f) => f.name === filterField);
     const block: FilterBlockConfig = {
       id: generateId(), type: "filter", field: filterField,
@@ -967,7 +1051,7 @@ export function CanvasBuilder({ existingCanvas }: Props) {
   }
 
   function handleAddPreview() {
-    if (!canvas || !previewDatasetId) return;
+    if (!canvas || !canEdit || !previewDatasetId) return;
     const block: DatasetPreviewBlockConfig = {
       id: generateId(), type: "preview", datasetId: previewDatasetId, order: canvas.blocks.length,
     };
@@ -1012,10 +1096,35 @@ export function CanvasBuilder({ existingCanvas }: Props) {
             </Button>
           </Link>
           {canvas && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2" data-tour-id="canvas-live-status">
               <span className="font-semibold text-sm">{canvas.name}</span>
               {canvas.published && (
                 <Badge className="text-[10px] bg-green-100 text-green-700 border-green-200">Published</Badge>
+              )}
+              {realtimeConnected && (
+                <Badge variant="outline" className="text-[10px] border-brand/20 text-brand">Live</Badge>
+              )}
+              {accessRole !== "owner" && (
+                <Badge variant="outline" className="text-[10px] capitalize">{accessRole}</Badge>
+              )}
+              {collaborators.length > 0 && (
+                <div className="flex -space-x-2 pl-1">
+                  {collaborators.slice(0, 5).map((collaborator) => (
+                    <div
+                      key={collaborator.userId}
+                      className="flex h-7 w-7 items-center justify-center rounded-full border-2 bg-white text-[10px] font-bold shadow-sm"
+                      style={{ borderColor: collaborator.color, color: collaborator.color }}
+                      title={collaborator.displayName}
+                    >
+                      {collaborator.displayName.slice(0, 1).toUpperCase()}
+                    </div>
+                  ))}
+                  {collaborators.length > 5 && (
+                    <div className="flex h-7 items-center rounded-full border bg-white px-2 text-[10px] font-medium shadow-sm">
+                      +{collaborators.length - 5}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           )}
@@ -1023,26 +1132,37 @@ export function CanvasBuilder({ existingCanvas }: Props) {
         <div className="flex items-center gap-2">
           {canvas && (
             <>
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-2 border-brand/30 text-brand hover:bg-brand-tint-100 hover:border-brand"
-                onClick={() => setAiOpen(true)}
-              >
-                <Sparkles className="h-4 w-4" /> AI
-              </Button>
-              <Button variant="outline" size="sm" className="gap-2" onClick={() => setAddOpen(true)} data-tour-id="add-block-btn">
-                <Plus className="h-4 w-4" /> Add Block
-              </Button>
+              {canEdit && (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2 border-brand/30 text-brand hover:bg-brand-tint-100 hover:border-brand"
+                    onClick={() => setAiOpen(true)}
+                  >
+                    <Sparkles className="h-4 w-4" /> AI
+                  </Button>
+                  <Button variant="outline" size="sm" className="gap-2" onClick={() => setAddOpen(true)} data-tour-id="add-block-btn">
+                    <Plus className="h-4 w-4" /> Add Block
+                  </Button>
+                </>
+              )}
+              {canManageShares && (
+                <Button variant="outline" size="sm" className="gap-2" onClick={() => setShareOpen(true)} data-tour-id="share-canvas-btn">
+                  <Users className="h-4 w-4" /> Share
+                </Button>
+              )}
               <Link href={`/home/reports?sourceType=canvas&sourceId=${canvas.id}`}>
                 <Button variant="outline" size="sm" className="gap-2">
                   <FileText className="h-4 w-4" /> Report
                 </Button>
               </Link>
-              <Button variant="outline" size="sm" className="gap-2" onClick={() => setPublishOpen(true)} data-tour-id="publish-btn">
-                <Globe className="h-4 w-4" />
-                {canvas.published ? "Republish" : "Publish"}
-              </Button>
+              {canEdit && (
+                <Button variant="outline" size="sm" className="gap-2" onClick={() => setPublishOpen(true)} data-tour-id="publish-btn">
+                  <Globe className="h-4 w-4" />
+                  {canvas.published ? "Republish" : "Publish"}
+                </Button>
+              )}
             </>
           )}
           {saveStatus === "saving" && (
@@ -1079,14 +1199,37 @@ export function CanvasBuilder({ existingCanvas }: Props) {
 
       {/* Canvas area */}
       <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-6 bg-muted/20">
+        {collaborators
+          .filter((collaborator) => collaborator.cursor)
+          .map((collaborator) => (
+            <div
+              key={collaborator.userId}
+              className="pointer-events-none fixed z-50 print:hidden"
+              style={{
+                left: collaborator.cursor!.x,
+                top: collaborator.cursor!.y,
+                color: collaborator.color,
+              }}
+            >
+              <div className="h-0 w-0 border-l-[7px] border-r-[7px] border-t-[12px] border-l-transparent border-r-transparent" style={{ borderTopColor: collaborator.color }} />
+              <div className="mt-1 rounded-md px-2 py-1 text-[10px] font-semibold text-white shadow-sm" style={{ backgroundColor: collaborator.color }}>
+                {collaborator.displayName}
+                {collaborator.editingBlockId ? " editing" : ""}
+              </div>
+            </div>
+          ))}
         {!canvas ? (
           <div className="text-center text-muted-foreground text-sm">Initializing…</div>
         ) : canvas.blocks.length === 0 ? (
           <div className="max-w-2xl mx-auto border-2 border-dashed rounded-2xl p-16 text-center">
-            <p className="text-muted-foreground text-sm mb-4">Your canvas is empty. Add your first block.</p>
-            <Button onClick={() => setAddOpen(true)} className="gap-2">
-              <Plus className="h-4 w-4" /> Add Block
-            </Button>
+            <p className="text-muted-foreground text-sm mb-4">
+              {canEdit ? "Your canvas is empty. Add your first block." : "This shared canvas is empty."}
+            </p>
+            {canEdit && (
+              <Button onClick={() => setAddOpen(true)} className="gap-2">
+                <Plus className="h-4 w-4" /> Add Block
+              </Button>
+            )}
           </div>
         ) : mounted ? (
           <GridLayout
@@ -1097,12 +1240,22 @@ export function CanvasBuilder({ existingCanvas }: Props) {
             onLayoutChange={handleLayoutChange}
             margin={[16, 16]}
             containerPadding={[0, 0]}
-            isResizable
-            isDraggable
+            isResizable={canEdit}
+            isDraggable={canEdit}
             resizeHandles={["se", "sw"]}
           >
             {canvas.blocks.map((block) => (
-              <div key={block.id}>
+              <div
+                key={block.id}
+                onFocusCapture={() => {
+                  if (canEdit) broadcastEditingBlock(block.id);
+                }}
+                onBlurCapture={(event) => {
+                  if (canEdit && !event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                    broadcastEditingBlock(null);
+                  }
+                }}
+              >
                 <BlockCard
                   block={block}
                   canvasId={canvas.id}
@@ -1110,6 +1263,8 @@ export function CanvasBuilder({ existingCanvas }: Props) {
                   activeFilters={activeFilters}
                   activeSmartFilters={activeSmartFilters}
                   onFilterChange={handleFilterChange}
+                  editingCollaborator={collaborators.find((collaborator) => collaborator.editingBlockId === block.id)}
+                  canEdit={canEdit}
                 />
               </div>
             ))}
@@ -1315,13 +1470,22 @@ export function CanvasBuilder({ existingCanvas }: Props) {
       </Dialog>
 
       {/* Publish modal */}
-      {canvas && (
+      {canvas && canEdit && (
         <PublishModal canvasId={canvas.id} open={publishOpen} onOpenChange={setPublishOpen} />
       )}
 
       {/* AI Assistant modal */}
-      {aiOpen && canvas && (
+      {aiOpen && canvas && canEdit && (
         <AIAssistantModal canvasId={canvas.id} onClose={() => setAiOpen(false)} />
+      )}
+
+      {canvas && canManageShares && (
+        <ShareModal
+          canvasId={canvas.id}
+          canvasName={canvas.name}
+          open={shareOpen}
+          onClose={() => setShareOpen(false)}
+        />
       )}
     </div>
   );

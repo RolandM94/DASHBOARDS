@@ -24,8 +24,12 @@ interface CanvasState {
   updateBlock: (canvasId: string, blockId: string, patch: Partial<CanvasBlock>) => void;
   removeBlock: (canvasId: string, blockId: string) => void;
   updateLayout: (canvasId: string, layout: GridLayoutItem[]) => void;
+  applyRemoteChange: (canvas: Pick<Canvas, "id" | "name" | "blocks" | "layout" | "updatedAt">) => void;
+  consumeRemoteUpdate: () => boolean;
   getCanvasById: (id: string) => Canvas | undefined;
 }
+
+let remoteUpdatePending = false;
 
 export const useCanvasStore = create<CanvasState>()((set, get) => ({
   canvases: [],
@@ -98,6 +102,29 @@ export const useCanvasStore = create<CanvasState>()((set, get) => ({
           : c
       ),
     })),
+
+  applyRemoteChange: (remote) => {
+    remoteUpdatePending = true;
+    set((s) => ({
+      canvases: s.canvases.map((c) =>
+        c.id === remote.id
+          ? {
+              ...c,
+              name: remote.name,
+              blocks: remote.blocks,
+              layout: remote.layout,
+              updatedAt: remote.updatedAt,
+            }
+          : c
+      ),
+    }));
+  },
+
+  consumeRemoteUpdate: () => {
+    const value = remoteUpdatePending;
+    remoteUpdatePending = false;
+    return value;
+  },
 
   getCanvasById: (id) => get().canvases.find((c) => c.id === id),
 }));

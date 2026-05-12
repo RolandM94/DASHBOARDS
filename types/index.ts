@@ -225,6 +225,7 @@ export interface Canvas {
   name: string;
   blocks: CanvasBlock[];
   layout?: GridLayoutItem[];   // 2-D grid positions — absent on old canvases, generated on load
+  accessRole?: "owner" | "editor" | "viewer";
   createdAt: string;
   updatedAt: string;
   published: boolean;
